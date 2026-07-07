@@ -47,7 +47,7 @@ struct CalendarScreen: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().overlay(Theme.border)
+            GreekDivider()
 
             switch mode {
             case .month:
@@ -69,7 +69,7 @@ struct CalendarScreen: View {
                 }
             }
         }
-        .background(Theme.bg)
+        .background(LinenBackground())
         .fullScreenCover(item: $expandedDay, onDismiss: { tileRefresh += 1 }) { day in
             DayEditorModal(dateKey: day.key)
         }
@@ -424,7 +424,7 @@ private struct DayEditorModal: View {
             .padding(.vertical, 10)
             .background(Theme.card)
 
-            Divider().overlay(Theme.border)
+            GreekDivider()
 
             if let note {
                 CanvasEditorView(note: note)

@@ -24,6 +24,7 @@
 		C39FF7C68E7FF407162A8FE0 /* QuickNotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B19F2FF91070061C3AC49EB /* QuickNotesScreen.swift */; };
 		DEC3F4096CCD84527AD059F4 /* TabsBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A8650DA2DBD94F07ED0CEC /* TabsBarView.swift */; };
 		E338844CFC483DFD624008CA /* NoteSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */; };
+		ED79DD1FE4A9029EB630E495 /* Decor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CF4AA211C25A2EB28D43CD5 /* Decor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +35,7 @@
 		3577B88440AC35DEA985DC16 /* NoteThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteThumbnail.swift; sourceTree = "<group>"; };
 		4C0A8204493F8081A72E9EAD /* FolderGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderGridView.swift; sourceTree = "<group>"; };
 		72E253EC8026FFD2B23DFD0E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		7CF4AA211C25A2EB28D43CD5 /* Decor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Decor.swift; sourceTree = "<group>"; };
 		9A28C237DC144F62789F8AEA /* DateUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateUtils.swift; sourceTree = "<group>"; };
 		9B19F2FF91070061C3AC49EB /* QuickNotesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickNotesScreen.swift; sourceTree = "<group>"; };
 		A4988E9A26B93C6663B1E7AB /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 				AD3259D368F89E2385FBF81D /* Assets.xcassets */,
 				C4897A2F1AD7F1486D7CFDCD /* ContentView.swift */,
 				9A28C237DC144F62789F8AEA /* DateUtils.swift */,
+				7CF4AA211C25A2EB28D43CD5 /* Decor.swift */,
 				72E253EC8026FFD2B23DFD0E /* Info.plist */,
 				1CD7A445BBCA55D1F9A8D5B6 /* Models.swift */,
 				AEE94D1A1E5562A808603176 /* NoteyApp.swift */,
@@ -188,6 +191,7 @@
 				51C9D2DFE064A5D0F700D89E /* CanvasEditorView.swift in Sources */,
 				66DAF7CDDFBDA9840C77BEF8 /* ContentView.swift in Sources */,
 				907ADDA3C20670101835BAB9 /* DateUtils.swift in Sources */,
+				ED79DD1FE4A9029EB630E495 /* Decor.swift in Sources */,
 				08992BDB611319630A0F4B35 /* DrawingCanvasView.swift in Sources */,
 				18648E5958F73DCF0B45C9D5 /* FolderGridView.swift in Sources */,
 				30224CC2DE5C682A102482F4 /* Models.swift in Sources */,

@@ -55,7 +55,7 @@ struct TabsBarView: View {
 
             tabsScroller
         }
-        .background(Theme.bgDeep)
+        .background(LinenBackground(base: Theme.bgDeep, intensity: 0.35))
         // Dropping a tab on the empty bar area pulls the note out of its folder.
         .dropDestination(for: String.self) { items, _ in
             guard let id = draggedNoteID(items) else { return false }

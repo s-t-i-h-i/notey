@@ -73,7 +73,7 @@ struct FolderGridView: View {
             }
             .padding(16)
         }
-        .background(Theme.bg)
+        .background(LinenBackground())
         .sheet(item: $exportURL) { url in
             ShareSheet(items: [url])
         }
@@ -203,25 +203,36 @@ struct FolderGridView: View {
     }
 
     private func sectionTitle(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .heavy))
-            .kerning(1.2)
-            .foregroundStyle(Theme.textSecondary)
+        HStack(spacing: 10) {
+            Text(text.uppercased())
+                .font(.system(size: 10, weight: .heavy))
+                .kerning(1.2)
+                .foregroundStyle(Theme.textSecondary)
+            // Short engraved meander after the label.
+            MeanderRule(color: Theme.navy.opacity(0.16))
+                .frame(width: 72, height: 8)
+        }
     }
 
     private var emptyState: some View {
         Button {
             onCreateNote(currentFolder)
         } label: {
-            VStack(spacing: 10) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 28))
+            VStack(spacing: 22) {
+                // Stars hang from the card's top edge, one blushing pink.
+                HangingStars(
+                    strands: HangingStars.five,
+                    color: Theme.navy.opacity(0.72),
+                    accentIndex: 3,
+                    accentColor: Theme.pink
+                )
+                .frame(width: 230, height: 100)
                 Text("Pusto tutaj — utwórz pierwszą notatkę")
                     .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.bottom, 44)
             }
-            .foregroundStyle(Theme.textSecondary)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 52)
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
@@ -308,10 +319,9 @@ struct FolderGridView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Group {
                     if note.isEmpty {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 26))
-                            .foregroundStyle(Theme.border)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        HangingStars(strands: HangingStars.three, color: Theme.navy.opacity(0.24))
+                            .frame(width: 96, height: 64)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     } else {
                         NoteThumbnailView(note: note, fit: .content)
                     }

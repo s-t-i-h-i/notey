@@ -224,9 +224,9 @@ struct ContentView: View {
                     bottomTrailingRadius: trailing ? 0 : 10,
                     topTrailingRadius: trailing ? 0 : 10
                 )
-                .fill(.black.opacity(0.82))
+                .fill(Theme.navy.opacity(0.92))
             )
-            .shadow(color: .black.opacity(0.25), radius: 6, x: trailing ? -2 : 2)
+            .shadow(color: Theme.navy.opacity(0.25), radius: 6, x: trailing ? -2 : 2)
             .contentShape(Rectangle())
             .onTapGesture { undock(slot.id, in: size) }
             .gesture(
@@ -263,9 +263,9 @@ struct ContentView: View {
             .frame(width: 28, height: 88)
             .background(
                 UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12)
-                    .fill(.black.opacity(0.88))
+                    .fill(Theme.navy)
             )
-            .shadow(color: .black.opacity(0.25), radius: 6, x: -2)
+            .shadow(color: Theme.navy.opacity(0.3), radius: 6, x: -2)
             .contentShape(Rectangle())
             .offset(x: handleDragOffset)
             .onTapGesture {

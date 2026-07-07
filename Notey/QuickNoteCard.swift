@@ -125,6 +125,17 @@ struct QuickNoteCard: View {
                 y += 26
             }
             ctx.stroke(lines, with: .color(Color(hex: 0xBFD0DE).opacity(0.55)), lineWidth: 1)
+            // A tiny star charm dangling from the top edge.
+            let charmX = size.width - 46
+            var thread = Path()
+            thread.move(to: CGPoint(x: charmX, y: 0))
+            thread.addLine(to: CGPoint(x: charmX, y: 13))
+            ctx.stroke(thread, with: .color(Theme.navy.opacity(0.4)), lineWidth: 1)
+            let charmRect = CGRect(x: charmX - 5.5, y: 13, width: 11, height: 11)
+            let tilt = CGAffineTransform(translationX: charmRect.midX, y: charmRect.midY)
+                .rotated(by: -10 * .pi / 180)
+                .translatedBy(x: -charmRect.midX, y: -charmRect.midY)
+            ctx.fill(StarShape().path(in: charmRect).applying(tilt), with: .color(Theme.navy.opacity(0.55)))
         }
         .allowsHitTesting(false)
     }

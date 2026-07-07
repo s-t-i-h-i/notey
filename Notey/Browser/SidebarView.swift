@@ -38,15 +38,22 @@ struct SidebarView: View {
     }
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            ScrollView {
             VStack(alignment: .leading, spacing: 2) {
                 // The pink dot is one of the few pink accents in the app.
-                (Text("notey").foregroundColor(Theme.navy)
-                    + Text(".").foregroundColor(Theme.pink))
-                    .font(.system(size: 22, weight: .heavy))
-                    .padding(.horizontal, 14)
-                    .padding(.top, 10)
-                    .padding(.bottom, 12)
+                HStack(alignment: .top, spacing: 8) {
+                    (Text("notey").foregroundColor(Theme.navy)
+                        + Text(".").foregroundColor(Theme.pink))
+                        .font(.system(size: 22, weight: .heavy))
+                        .padding(.top, 10)
+                    Spacer()
+                    // Stars on threads, hanging from the top edge.
+                    HangingStars(strands: HangingStars.three, color: Theme.navy.opacity(0.72))
+                        .frame(width: 72, height: 44)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
 
                 navRow(
                     icon: "calendar",
@@ -140,7 +147,15 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 6)
         }
-        .background(Theme.bg)
+
+        // Wave scroll footer — a quiet nod to the Greek waves artwork.
+        WaveScroll(color: Theme.navy.opacity(0.18), lineWidth: 1.5)
+            .frame(height: 30)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
+        }
+        .background(LinenBackground())
         .alert("Zmień nazwę folderu", isPresented: Binding(
             get: { renamingFolder != nil },
             set: { if !$0 { renamingFolder = nil } }

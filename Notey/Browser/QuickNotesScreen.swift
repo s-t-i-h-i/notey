@@ -46,7 +46,7 @@ struct QuickNotesScreen: View {
             }
             .padding(16)
         }
-        .background(Theme.bg)
+        .background(LinenBackground())
         .confirmationDialog(
             "Usunąć szybką notatkę?",
             isPresented: Binding(get: { deletingNote != nil }, set: { if !$0 { deletingNote = nil } }),
@@ -82,16 +82,23 @@ struct QuickNotesScreen: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "bolt.square")
-                .font(.system(size: 28))
+        VStack(spacing: 22) {
+            // Stars hang from the card's top edge, one blushing pink.
+            HangingStars(
+                strands: HangingStars.five,
+                color: Theme.navy.opacity(0.72),
+                accentIndex: 1,
+                accentColor: Theme.pink
+            )
+            .frame(width: 230, height: 100)
             Text("Brak szybkich notatek — dodaj pierwszą czarnym uchwytem przy prawej krawędzi")
                 .font(.system(size: 13, weight: .medium))
                 .multilineTextAlignment(.center)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.bottom, 44)
+                .padding(.horizontal, 24)
         }
-        .foregroundStyle(Theme.textSecondary)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 52)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
