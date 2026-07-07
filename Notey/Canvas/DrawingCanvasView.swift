@@ -213,9 +213,34 @@ private final class AnnotationCardView: UIView {
 //   3. handwriting (PencilKit)
 //   4. annotation cards, each showing its own attached strokes
 //   5. selection outline / draft shapes
+
+final class ImmediatePanGestureRecognizer: UIPanGestureRecognizer {
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        if state == .possible {
+            state = .began
+        }
+    }
+}
+
+final class NoteyCanvasView: PKCanvasView {
+    var allowEditMenu: Bool = true
+    
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if !allowEditMenu {
+            return false
+        }
+        let actionName = NSStringFromSelector(action)
+        if actionName.contains("insertSpace") || actionName.contains("selectAll") {
+            return false
+        }
+        return super.canPerformAction(action, withSender: sender)
+    }
+}
+
 final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
 
-    let canvasView = PKCanvasView()
+    let canvasView = NoteyCanvasView()
     private let objectsHost = UIView()      // below the ink: pages + photos
     private let annotationsHost = UIView()  // above the ink: annotation cards
     private let pagesHost = UIView()
@@ -234,7 +259,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     var onSelection: ((SelectedElement?) -> Void)?
 
     private(set) var selected: SelectedElement? {
-        didSet { refreshSelectionLayer(); onSelection?(selected) }
+        didSet { refreshSelectionLayer(); onSelection?(selected); updateGestureStates() }
     }
 
     private let page = CanvasPage.size
@@ -264,8 +289,8 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     // Gesture state
     private var objectPan: UIPanGestureRecognizer!
     private var objectTap: UITapGestureRecognizer!
-    private var annotationPan: UIPanGestureRecognizer!
-    private var lassoErasePan: UIPanGestureRecognizer!
+    private var annotationPan: ImmediatePanGestureRecognizer!
+    private var lassoErasePan: ImmediatePanGestureRecognizer!
     private var holdPress: UILongPressGestureRecognizer!
     private var dragOriginalFrame: CGRect = .zero
     private var dragBaseDrawing = PKDrawing()
@@ -336,6 +361,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         // Object mode gestures
         objectTap = UITapGestureRecognizer(target: self, action: #selector(handleObjectTap(_:)))
+        objectTap.delegate = self
         objectTap.isEnabled = false
         canvasView.addGestureRecognizer(objectTap)
 
@@ -344,13 +370,13 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         objectPan.isEnabled = false
         canvasView.addGestureRecognizer(objectPan)
 
-        annotationPan = UIPanGestureRecognizer(target: self, action: #selector(handleAnnotationPan(_:)))
+        annotationPan = ImmediatePanGestureRecognizer(target: self, action: #selector(handleAnnotationPan(_:)))
         annotationPan.maximumNumberOfTouches = 1
         annotationPan.isEnabled = false
         canvasView.addGestureRecognizer(annotationPan)
 
         // Freeform eraser: circle strokes to delete them.
-        lassoErasePan = UIPanGestureRecognizer(target: self, action: #selector(handleLassoErase(_:)))
+        lassoErasePan = ImmediatePanGestureRecognizer(target: self, action: #selector(handleLassoErase(_:)))
         lassoErasePan.maximumNumberOfTouches = 1
         lassoErasePan.isEnabled = false
         canvasView.addGestureRecognizer(lassoErasePan)
@@ -579,14 +605,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             break
         }
 
-        var inkMode = [EditorTool.pen, .marker, .eraser, .lasso].contains(config.tool)
-        if config.tool == .eraser, config.eraserMode == .lasso { inkMode = false }
-        canvasView.drawingGestureRecognizer.isEnabled = inkMode
-        objectTap.isEnabled = config.tool == .objects || config.tool == .annotation
-        objectPan.isEnabled = config.tool == .objects
-        annotationPan.isEnabled = config.tool == .annotation
-        lassoErasePan.isEnabled = config.tool == .eraser && config.eraserMode == .lasso
-        holdPress.isEnabled = [EditorTool.pen, .marker].contains(config.tool)
+        updateGestureStates()
         canvasView.drawingPolicy = config.fingerDraws ? .anyInput : .pencilOnly
 
         if previousConfig.tool != config.tool, config.tool != .objects, config.tool != .annotation {
@@ -1018,17 +1037,15 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         card.setInk(PKDrawing(strokes: strokes).image(from: annotation.frame, scale: 2))
     }
 
-    // While the pen is down, fade the cards so the live stroke (which renders
-    // underneath them) stays visible; it pops onto the card on pen-up.
+    // While the pen is down, move the cards behind the live stroke so it stays visible.
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = true
-        guard !elements.annotations.isEmpty else { return }
-        UIView.animate(withDuration: 0.1) { self.annotationsHost.alpha = 0.45 }
+        canvasView.insertSubview(annotationsHost, aboveSubview: objectsHost)
     }
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = false
-        UIView.animate(withDuration: 0.2) { self.annotationsHost.alpha = 1 }
+        canvasView.bringSubviewToFront(annotationsHost)
         retryPendingEdgeShift()
         ensureRunwayForContent()
     }
@@ -1046,8 +1063,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         dragBaseElements = elements
         switch element {
         case .image:
-            // Everything written on an image travels with it.
-            dragAttachedStrokes = strokeIndexesCentered(in: frame, of: dragBaseDrawing)
+            dragAttachedStrokes = []
         case .annotation(let id):
             if let annotation = elements.annotations.first(where: { $0.id == id }) {
                 dragAttachedStrokes = attachedStrokeIndexes(for: annotation, of: dragBaseDrawing)
@@ -1123,10 +1139,43 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
+    private func updateGestureStates() {
+        var inkMode = [EditorTool.pen, .marker, .eraser, .lasso].contains(config.tool)
+        if config.tool == .eraser, config.eraserMode == .lasso { inkMode = false }
+        canvasView.drawingGestureRecognizer.isEnabled = inkMode
+        
+        let allowTap = config.tool == .objects || config.tool == .annotation || selected != nil
+        objectTap.isEnabled = allowTap
+        
+        objectPan.isEnabled = config.tool == .objects
+        annotationPan.isEnabled = config.tool == .annotation
+        lassoErasePan.isEnabled = config.tool == .eraser && config.eraserMode == .lasso
+        holdPress.isEnabled = [EditorTool.pen, .marker].contains(config.tool)
+        
+        if selected != nil {
+            canvasView.drawingPolicy = .pencilOnly
+        } else {
+            canvasView.drawingPolicy = config.fingerDraws ? .anyInput : .pencilOnly
+        }
+        
+        canvasView.allowEditMenu = (config.tool == .lasso)
+        
+        canvasView.forceAppleTapsToWait(for: objectTap, ignoring: [objectsHost, annotationsHost])
+    }
+
     // MARK: Object mode gestures
 
     @objc private func handleObjectTap(_ gesture: UITapGestureRecognizer) {
         let pt = pagePoint(from: gesture)
+        
+        if [EditorTool.pen, .marker, .eraser, .lasso].contains(config.tool) {
+            if elementAt(pt) != selected {
+                selected = nil
+                canvasView.endEditing(true)
+            }
+            return
+        }
+        
         if config.tool == .annotation {
             selected = annotationAt(pt).map { .annotation($0.id) }
         } else {
@@ -1191,7 +1240,28 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             let p = gestureRecognizer.location(in: canvasView)
             return elementAt(CGPoint(x: p.x / zoom, y: p.y / zoom)) != nil
         }
+        if gestureRecognizer === objectTap {
+            if [EditorTool.pen, .marker, .eraser, .lasso].contains(config.tool) {
+                let p = gestureRecognizer.location(in: canvasView)
+                let pt = CGPoint(x: p.x / zoom, y: p.y / zoom)
+                return elementAt(pt) != selected
+            }
+        }
         return true
+    }
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, canPrevent otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === objectTap {
+            return true
+        }
+        return false
+    }
+    
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === objectTap || otherGestureRecognizer === objectTap {
+            return true
+        }
+        return false
     }
 
     // Annotation tool: drag on empty space draws a new annotation; drag that
@@ -1447,5 +1517,20 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             )],
             title: title
         )
+    }
+}
+
+extension UIView {
+    func forceAppleTapsToWait(for objectTap: UITapGestureRecognizer, ignoring: [UIView]) {
+        for gesture in gestureRecognizers ?? [] {
+            if gesture === objectTap { continue }
+            if gesture is UITapGestureRecognizer || String(describing: type(of: gesture)).contains("Tap") {
+                gesture.require(toFail: objectTap)
+            }
+        }
+        for subview in subviews {
+            if ignoring.contains(where: { $0 === subview }) { continue }
+            subview.forceAppleTapsToWait(for: objectTap, ignoring: ignoring)
+        }
     }
 }

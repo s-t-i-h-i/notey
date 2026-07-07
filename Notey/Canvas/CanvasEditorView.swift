@@ -22,6 +22,7 @@ struct CanvasEditorView: View {
     @State private var showPhotoPicker = false
     @State private var showCamera = false
     @State private var showSettings = false
+    @State private var isNewNote = false
     // Tool whose options popover (opened via long-press) is showing.
     @State private var optionsTool: EditorTool?
     @State private var pdfURL: URL?
@@ -76,6 +77,7 @@ struct CanvasEditorView: View {
             pageCount = max(1, note.elements.pages ?? 1)
             if autoOpenSettingsID?.wrappedValue == note.id {
                 autoOpenSettingsID?.wrappedValue = nil
+                isNewNote = true
                 showSettings = true
             }
         }
@@ -95,7 +97,7 @@ struct CanvasEditorView: View {
             ShareSheet(items: [url])
         }
         .sheet(isPresented: $showSettings) {
-            NoteSettingsView(note: note, config: $config)
+            NoteSettingsView(note: note, config: $config, isNewNote: isNewNote)
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
@@ -205,6 +207,7 @@ struct CanvasEditorView: View {
             .help(config.fingerDraws ? "Rysuje palec i Pencil" : "Rysuje tylko Pencil")
 
             Button {
+                isNewNote = false
                 showSettings = true
             } label: {
                 Image(systemName: "slider.horizontal.3")

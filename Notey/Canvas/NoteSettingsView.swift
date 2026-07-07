@@ -6,6 +6,7 @@ import SwiftData
 struct NoteSettingsView: View {
     @Bindable var note: Note
     @Binding var config: CanvasToolConfig
+    var isNewNote: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -34,7 +35,7 @@ struct NoteSettingsView: View {
                         }
                     }
 
-                    if note.kind == .note {
+                    if isNewNote && note.kind == .note {
                         section("UKŁAD NOTATKI") {
                             HStack(spacing: 10) {
                                 layoutCard(
