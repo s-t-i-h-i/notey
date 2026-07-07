@@ -51,7 +51,6 @@ enum NoteThumbnail {
 
         let scale = min(size.width / region.width, size.height / region.height, 1.2)
         let renderer = UIGraphicsImageRenderer(size: size)
-        let split = elements.splitStrokes(of: drawing)
         let img = renderer.image { ctx in
             let c = ctx.cgContext
             paper.setFill()
@@ -63,29 +62,21 @@ enum NoteThumbnail {
             )
             c.scaleBy(x: scale, y: scale)
 
-            // Canvas z-order: photos, base ink, then annotation cards with
-            // their own attached writing on top.
+            // Canvas z-order: photos, annotation cards, then all ink on top.
             for element in elements.images {
                 if let uiImage = UIImage(data: element.imageData) {
                     uiImage.draw(in: element.frame)
                 }
             }
-            if !split.base.isEmpty {
-                let inkRegion = fit == .content ? region : page
-                let ink = PKDrawing(strokes: split.base).image(from: inkRegion, scale: max(0.5, scale))
-                ink.draw(in: inkRegion)
-            }
             for annotation in elements.annotations {
                 let card = UIBezierPath(roundedRect: annotation.frame, cornerRadius: 12)
                 UIColor(hexString: annotation.colorHex).setFill()
                 card.fill()
-                if let strokes = split.byAnnotation[annotation.id], !strokes.isEmpty {
-                    c.saveGState()
-                    card.addClip()
-                    let ink = PKDrawing(strokes: strokes).image(from: annotation.frame, scale: max(0.5, scale))
-                    ink.draw(in: annotation.frame)
-                    c.restoreGState()
-                }
+            }
+            if !drawing.strokes.isEmpty {
+                let inkRegion = fit == .content ? region : page
+                let ink = drawing.image(from: inkRegion, scale: max(0.5, scale))
+                ink.draw(in: inkRegion)
             }
         }
         cache.setObject(img, forKey: key)

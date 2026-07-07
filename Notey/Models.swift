@@ -177,27 +177,3 @@ extension PKStroke {
     /// used to remember which strokes were written on an annotation.
     var fingerprint: String { "\(randomSeed)-\(path.count)" }
 }
-
-extension CanvasElements {
-    /// Splits a drawing into base strokes and the strokes attached to each
-    /// annotation, mirroring the canvas z-order: base ink renders under the
-    /// annotation cards, attached ink renders on top of its card.
-    func splitStrokes(of drawing: PKDrawing) -> (base: [PKStroke], byAnnotation: [UUID: [PKStroke]]) {
-        var base: [PKStroke] = []
-        var byAnnotation: [UUID: [PKStroke]] = [:]
-        for stroke in drawing.strokes {
-            let key = stroke.fingerprint
-            var attached = false
-            for annotation in annotations.reversed() {
-                guard annotation.strokeKeys?.contains(key) == true,
-                      stroke.renderBounds.intersects(annotation.frame.insetBy(dx: -80, dy: -80))
-                else { continue }
-                byAnnotation[annotation.id, default: []].append(stroke)
-                attached = true
-                break
-            }
-            if !attached { base.append(stroke) }
-        }
-        return (base, byAnnotation)
-    }
-}

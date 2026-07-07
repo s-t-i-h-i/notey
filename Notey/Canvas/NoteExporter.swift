@@ -43,8 +43,6 @@ enum NoteExporter {
                     decoded[element.id] = UIImage(data: element.imageData)
                 }
                 let paper = payload.paperHex.map { UIColor(hexString: $0) } ?? UIColor(Theme.card)
-                let split = payload.elements.splitStrokes(of: payload.drawing)
-                let baseDrawing = PKDrawing(strokes: split.base)
 
                 if payload.layout == .infinite {
                     ctx.beginPage()
@@ -70,8 +68,7 @@ enum NoteExporter {
                         in: cg,
                         inkRegion: region,
                         elements: payload.elements,
-                        baseDrawing: baseDrawing,
-                        attachedByAnnotation: split.byAnnotation,
+                        drawing: payload.drawing,
                         decodedImages: decoded
                     )
                     cg.restoreGState()
@@ -97,8 +94,7 @@ enum NoteExporter {
                         in: cg,
                         inkRegion: sourceRect,
                         elements: payload.elements,
-                        baseDrawing: baseDrawing,
-                        attachedByAnnotation: split.byAnnotation,
+                        drawing: payload.drawing,
                         decodedImages: decoded
                     )
                     cg.restoreGState()
@@ -119,34 +115,25 @@ enum NoteExporter {
         }
     }
 
-    /// Canvas z-order: photos, base ink, then annotation cards each carrying
-    /// its own attached strokes.
+    /// Canvas z-order: photos, annotation cards, then all ink on top.
     private static func drawContent(
         in cg: CGContext,
         inkRegion: CGRect,
         elements: CanvasElements,
-        baseDrawing: PKDrawing,
-        attachedByAnnotation: [UUID: [PKStroke]],
+        drawing: PKDrawing,
         decodedImages: [UUID: UIImage]
     ) {
         for element in elements.images {
             decodedImages[element.id]?.draw(in: element.frame)
         }
-        if !baseDrawing.strokes.isEmpty {
-            let ink = baseDrawing.image(from: inkRegion, scale: 2)
-            ink.draw(in: inkRegion)
-        }
         for annotation in elements.annotations {
             let card = UIBezierPath(roundedRect: annotation.frame, cornerRadius: 12)
             UIColor(hexString: annotation.colorHex).setFill()
             card.fill()
-            if let strokes = attachedByAnnotation[annotation.id], !strokes.isEmpty {
-                cg.saveGState()
-                card.addClip()
-                let ink = PKDrawing(strokes: strokes).image(from: annotation.frame, scale: 2)
-                ink.draw(in: annotation.frame)
-                cg.restoreGState()
-            }
+        }
+        if !drawing.strokes.isEmpty {
+            let ink = drawing.image(from: inkRegion, scale: 2)
+            ink.draw(in: inkRegion)
         }
     }
 }

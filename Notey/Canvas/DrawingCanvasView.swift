@@ -159,10 +159,11 @@ struct DrawingCanvas: UIViewRepresentable {
     }
 }
 
-// MARK: - Annotation card (rendered ABOVE the ink)
+// MARK: - Annotation card (rendered BELOW the ink)
 
-// A sticky-note-like card: colored paper + an image of the strokes that were
-// written on it. Everything else on the canvas stays underneath the card.
+// A colored highlight patch sitting under the handwriting. The ink image is
+// only used while the card is dragged: its attached strokes are lifted off
+// the canvas and baked onto the card so they cannot lag behind the drag.
 private final class AnnotationCardView: UIView {
     private let content = UIView()
     private let inkView = UIImageView()
@@ -205,14 +206,22 @@ private final class AnnotationCardView: UIView {
     }
 }
 
-// MARK: - Container view (pages + pattern + objects + PencilKit ink + annotations)
+// Overlay layers (lasso-eraser trail, annotation draft, selection outline)
+// are standalone CAShapeLayers without a backing view, so every property
+// change would get the implicit 0.25s CATransaction animation — the shape
+// visibly trails behind the finger. No actions = the overlay tracks 1:1.
+private final class ImmediateShapeLayer: CAShapeLayer {
+    override func action(forKey event: String) -> CAAction? { nil }
+}
+
+// MARK: - Container view (pages + pattern + objects + annotations + PencilKit ink)
 
 // Z-order, bottom to top:
 //   1. page cards + background pattern
 //   2. photos
-//   3. handwriting (PencilKit)
-//   4. annotation cards, each showing its own attached strokes
-//   5. selection outline / draft shapes
+//   3. annotation cards (highlight patches under the writing)
+//   4. handwriting (PencilKit) — always fully visible, wet strokes included
+//   5. selection outline / draft shapes (overlayHost)
 
 final class ImmediatePanGestureRecognizer: UIPanGestureRecognizer {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -242,12 +251,13 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     let canvasView = NoteyCanvasView()
     private let objectsHost = UIView()      // below the ink: pages + photos
-    private let annotationsHost = UIView()  // above the ink: annotation cards
+    private let annotationsHost = UIView()  // below the ink too: annotation cards
+    private let overlayHost = UIView()      // above the ink: selection + drafts
     private let pagesHost = UIView()
     private var pageCards: [UIView] = []
     private var patternLayers: [CAShapeLayer] = []
-    private let selectionLayer = CAShapeLayer()
-    private let draftLayer = CAShapeLayer()
+    private let selectionLayer = ImmediateShapeLayer()
+    private let draftLayer = ImmediateShapeLayer()
 
     private(set) var elements: CanvasElements
     private var config = CanvasToolConfig()
@@ -349,6 +359,11 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         annotationsHost.layer.position = .zero
         annotationsHost.isUserInteractionEnabled = false
 
+        overlayHost.frame = CGRect(origin: .zero, size: totalSize)
+        overlayHost.layer.anchorPoint = .zero
+        overlayHost.layer.position = .zero
+        overlayHost.isUserInteractionEnabled = false
+
         selectionLayer.fillColor = nil
         selectionLayer.strokeColor = UIColor(Theme.navy).cgColor
         selectionLayer.lineWidth = 1.5
@@ -356,8 +371,14 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         draftLayer.fillColor = nil
 
+        overlayHost.layer.addSublayer(selectionLayer)
+        overlayHost.layer.addSublayer(draftLayer)
+
+        // Both hosts stay under PencilKit's own rendering; only overlayHost
+        // (added last) sits above the ink.
         canvasView.insertSubview(objectsHost, at: 0)
-        canvasView.addSubview(annotationsHost)
+        canvasView.insertSubview(annotationsHost, aboveSubview: objectsHost)
+        canvasView.addSubview(overlayHost)
 
         // Object mode gestures
         objectTap = UITapGestureRecognizer(target: self, action: #selector(handleObjectTap(_:)))
@@ -532,6 +553,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let transform = CGAffineTransform(scaleX: z, y: z)
         objectsHost.transform = transform
         annotationsHost.transform = transform
+        overlayHost.transform = transform
         // Overlay lines live in page space (they scale with the zoom); keep
         // them visually constant.
         let rel = max(0.05, z / fitScale)
@@ -924,12 +946,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             annotationsHost.addSubview(card)
             annotationViews[annotation.id] = card
         }
-        // Selection & draft always above the annotation cards.
-        selectionLayer.removeFromSuperlayer()
-        draftLayer.removeFromSuperlayer()
-        annotationsHost.layer.addSublayer(selectionLayer)
-        annotationsHost.layer.addSublayer(draftLayer)
-        refreshAllAnnotationInk()
         refreshSelectionLayer()
     }
 
@@ -1020,32 +1036,14 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
-    private func refreshAllAnnotationInk() {
-        for annotation in elements.annotations {
-            refreshAnnotationInk(annotation)
-        }
-    }
-
-    private func refreshAnnotationInk(_ annotation: AnnotationElement) {
-        guard let card = annotationViews[annotation.id] else { return }
-        let indexes = attachedStrokeIndexes(for: annotation, of: canvasView.drawing)
-        guard !indexes.isEmpty else {
-            card.setInk(nil)
-            return
-        }
-        let strokes = indexes.map { canvasView.drawing.strokes[$0] }
-        card.setInk(PKDrawing(strokes: strokes).image(from: annotation.frame, scale: 2))
-    }
-
-    // While the pen is down, move the cards behind the live stroke so it stays visible.
+    // The cards live under the ink, so writing (wet strokes included) is
+    // always fully visible — no layer juggling while the tool is in use.
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = true
-        canvasView.insertSubview(annotationsHost, aboveSubview: objectsHost)
     }
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = false
-        canvasView.bringSubviewToFront(annotationsHost)
         retryPendingEdgeShift()
         ensureRunwayForContent()
     }
@@ -1070,10 +1068,16 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             } else {
                 dragAttachedStrokes = []
             }
-            // The card image already shows the attached ink, so take the real
-            // strokes off the canvas for the duration of the drag — otherwise
-            // they trail behind the card as a lagging double image.
+            // Bake the attached ink onto the card and take the real strokes
+            // off the canvas for the duration of the drag — otherwise they
+            // trail behind the card as a lagging double image.
             if !dragAttachedStrokes.isEmpty {
+                if let annotation = elements.annotations.first(where: { $0.id == id }) {
+                    let attached = dragAttachedStrokes.map { dragBaseDrawing.strokes[$0] }
+                    annotationViews[id]?.setInk(
+                        PKDrawing(strokes: attached).image(from: annotation.frame, scale: 2)
+                    )
+                }
                 var strokes = dragBaseDrawing.strokes
                 for index in dragAttachedStrokes.sorted(by: >) {
                     strokes.remove(at: index)
@@ -1125,7 +1129,8 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         dragStrokesHidden = false
         dragActive = false
         commitElementChange(from: dragBaseElements, fromDrawing: dragBaseDrawing)
-        refreshAllAnnotationInk()
+        // The real strokes are back on the canvas — drop the baked drag image.
+        for card in annotationViews.values { card.setInk(nil) }
         retryPendingEdgeShift()
         ensureRunwayForContent()
     }
@@ -1252,6 +1257,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, canPrevent otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer === objectTap {
+            if otherGestureRecognizer is ImmediatePanGestureRecognizer {
+                return false
+            }
             return true
         }
         return false
@@ -1495,10 +1503,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let drawing = canvasView.drawing
         trackNewStrokes(in: drawing)
         // Mid-drag frames are transient (annotation drags even hide their
-        // attached strokes) — don't re-render cards or persist them; endDrag
-        // commits the final state once.
+        // attached strokes) — don't persist them; endDrag commits the final
+        // state once.
         guard !dragActive else { return }
-        refreshAllAnnotationInk()
         onChange?(drawing, elements)
         if !toolInUse {
             ensureRunwayForContent()
