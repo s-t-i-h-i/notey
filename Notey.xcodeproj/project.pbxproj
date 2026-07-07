@@ -1,0 +1,400 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08992BDB611319630A0F4B35 /* DrawingCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF64429D79FB87D29480C26E /* DrawingCanvasView.swift */; };
+		0CCDFA1B5872E8C5926C9388 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4988E9A26B93C6663B1E7AB /* Theme.swift */; };
+		18648E5958F73DCF0B45C9D5 /* FolderGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C0A8204493F8081A72E9EAD /* FolderGridView.swift */; };
+		1C7EB250B2C7839336F08F39 /* CalendarScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2F91B583D0F4197C085BCCD /* CalendarScreen.swift */; };
+		24C140AC7D6DAB5D56F2C661 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AD3259D368F89E2385FBF81D /* Assets.xcassets */; };
+		30224CC2DE5C682A102482F4 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD7A445BBCA55D1F9A8D5B6 /* Models.swift */; };
+		33F0FA79BAFCD1A34DA3B451 /* QuickNoteCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB15D62FD19B254BEE372E66 /* QuickNoteCard.swift */; };
+		51C9D2DFE064A5D0F700D89E /* CanvasEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37571AE92F0FFEAB5E988B1 /* CanvasEditorView.swift */; };
+		574FA10B6E594DFF3BB08469 /* NoteThumbnail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3577B88440AC35DEA985DC16 /* NoteThumbnail.swift */; };
+		66DAF7CDDFBDA9840C77BEF8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4897A2F1AD7F1486D7CFDCD /* ContentView.swift */; };
+		67AF5C45C239740738ABA63A /* NoteExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A87FD871C881D522DE25765D /* NoteExporter.swift */; };
+		89F12C16E36719EC5A6904B4 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BFE9EA612E8275F06792443 /* SidebarView.swift */; };
+		907ADDA3C20670101835BAB9 /* DateUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A28C237DC144F62789F8AEA /* DateUtils.swift */; };
+		AFE1BF8CBEB9276A7E60A914 /* NoteyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE94D1A1E5562A808603176 /* NoteyApp.swift */; };
+		C39FF7C68E7FF407162A8FE0 /* QuickNotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B19F2FF91070061C3AC49EB /* QuickNotesScreen.swift */; };
+		DEC3F4096CCD84527AD059F4 /* TabsBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A8650DA2DBD94F07ED0CEC /* TabsBarView.swift */; };
+		E338844CFC483DFD624008CA /* NoteSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1997E30A4E5F007FECCF2E90 /* Notey.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Notey.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1CD7A445BBCA55D1F9A8D5B6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteSettingsView.swift; sourceTree = "<group>"; };
+		2BFE9EA612E8275F06792443 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		3577B88440AC35DEA985DC16 /* NoteThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteThumbnail.swift; sourceTree = "<group>"; };
+		4C0A8204493F8081A72E9EAD /* FolderGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderGridView.swift; sourceTree = "<group>"; };
+		72E253EC8026FFD2B23DFD0E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9A28C237DC144F62789F8AEA /* DateUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateUtils.swift; sourceTree = "<group>"; };
+		9B19F2FF91070061C3AC49EB /* QuickNotesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickNotesScreen.swift; sourceTree = "<group>"; };
+		A4988E9A26B93C6663B1E7AB /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A87FD871C881D522DE25765D /* NoteExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteExporter.swift; sourceTree = "<group>"; };
+		AD3259D368F89E2385FBF81D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AEE94D1A1E5562A808603176 /* NoteyApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteyApp.swift; sourceTree = "<group>"; };
+		B37571AE92F0FFEAB5E988B1 /* CanvasEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasEditorView.swift; sourceTree = "<group>"; };
+		B6A8650DA2DBD94F07ED0CEC /* TabsBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsBarView.swift; sourceTree = "<group>"; };
+		BB15D62FD19B254BEE372E66 /* QuickNoteCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickNoteCard.swift; sourceTree = "<group>"; };
+		C4897A2F1AD7F1486D7CFDCD /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E2F91B583D0F4197C085BCCD /* CalendarScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarScreen.swift; sourceTree = "<group>"; };
+		EF64429D79FB87D29480C26E /* DrawingCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingCanvasView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		65BF738CFD90FC919B7DE57A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1997E30A4E5F007FECCF2E90 /* Notey.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		7BEE8B6FF3E6E6AFDCB85136 /* Browser */ = {
+			isa = PBXGroup;
+			children = (
+				4C0A8204493F8081A72E9EAD /* FolderGridView.swift */,
+				9B19F2FF91070061C3AC49EB /* QuickNotesScreen.swift */,
+				2BFE9EA612E8275F06792443 /* SidebarView.swift */,
+				B6A8650DA2DBD94F07ED0CEC /* TabsBarView.swift */,
+			);
+			path = Browser;
+			sourceTree = "<group>";
+		};
+		84C47460764236109F2761F0 = {
+			isa = PBXGroup;
+			children = (
+				BD1E3A9F747734172F0D5BFF /* Notey */,
+				65BF738CFD90FC919B7DE57A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8A38480716BF58B36C6FBA51 /* Calendar */ = {
+			isa = PBXGroup;
+			children = (
+				E2F91B583D0F4197C085BCCD /* CalendarScreen.swift */,
+			);
+			path = Calendar;
+			sourceTree = "<group>";
+		};
+		BD1E3A9F747734172F0D5BFF /* Notey */ = {
+			isa = PBXGroup;
+			children = (
+				AD3259D368F89E2385FBF81D /* Assets.xcassets */,
+				C4897A2F1AD7F1486D7CFDCD /* ContentView.swift */,
+				9A28C237DC144F62789F8AEA /* DateUtils.swift */,
+				72E253EC8026FFD2B23DFD0E /* Info.plist */,
+				1CD7A445BBCA55D1F9A8D5B6 /* Models.swift */,
+				AEE94D1A1E5562A808603176 /* NoteyApp.swift */,
+				BB15D62FD19B254BEE372E66 /* QuickNoteCard.swift */,
+				A4988E9A26B93C6663B1E7AB /* Theme.swift */,
+				7BEE8B6FF3E6E6AFDCB85136 /* Browser */,
+				8A38480716BF58B36C6FBA51 /* Calendar */,
+				DFC91CC8946D6A34F77D6B44 /* Canvas */,
+			);
+			path = Notey;
+			sourceTree = "<group>";
+		};
+		DFC91CC8946D6A34F77D6B44 /* Canvas */ = {
+			isa = PBXGroup;
+			children = (
+				B37571AE92F0FFEAB5E988B1 /* CanvasEditorView.swift */,
+				EF64429D79FB87D29480C26E /* DrawingCanvasView.swift */,
+				A87FD871C881D522DE25765D /* NoteExporter.swift */,
+				1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */,
+				3577B88440AC35DEA985DC16 /* NoteThumbnail.swift */,
+			);
+			path = Canvas;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		CB7CBA6BA2567E9BA8281A27 /* Notey */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E1C94E028ED4BCB47E659619 /* Build configuration list for PBXNativeTarget "Notey" */;
+			buildPhases = (
+				72D1E4B5B7FB9718F2D4AEFE /* Sources */,
+				E28B814977834232F14BC042 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Notey;
+			packageProductDependencies = (
+			);
+			productName = Notey;
+			productReference = 1997E30A4E5F007FECCF2E90 /* Notey.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5F516685AF648A5D5B8E1BC3 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					CB7CBA6BA2567E9BA8281A27 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 20926CDE94EC363DDBF41092 /* Build configuration list for PBXProject "Notey" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 84C47460764236109F2761F0;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 65BF738CFD90FC919B7DE57A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				CB7CBA6BA2567E9BA8281A27 /* Notey */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E28B814977834232F14BC042 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				24C140AC7D6DAB5D56F2C661 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		72D1E4B5B7FB9718F2D4AEFE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1C7EB250B2C7839336F08F39 /* CalendarScreen.swift in Sources */,
+				51C9D2DFE064A5D0F700D89E /* CanvasEditorView.swift in Sources */,
+				66DAF7CDDFBDA9840C77BEF8 /* ContentView.swift in Sources */,
+				907ADDA3C20670101835BAB9 /* DateUtils.swift in Sources */,
+				08992BDB611319630A0F4B35 /* DrawingCanvasView.swift in Sources */,
+				18648E5958F73DCF0B45C9D5 /* FolderGridView.swift in Sources */,
+				30224CC2DE5C682A102482F4 /* Models.swift in Sources */,
+				67AF5C45C239740738ABA63A /* NoteExporter.swift in Sources */,
+				E338844CFC483DFD624008CA /* NoteSettingsView.swift in Sources */,
+				574FA10B6E594DFF3BB08469 /* NoteThumbnail.swift in Sources */,
+				AFE1BF8CBEB9276A7E60A914 /* NoteyApp.swift in Sources */,
+				33F0FA79BAFCD1A34DA3B451 /* QuickNoteCard.swift in Sources */,
+				C39FF7C68E7FF407162A8FE0 /* QuickNotesScreen.swift in Sources */,
+				89F12C16E36719EC5A6904B4 /* SidebarView.swift in Sources */,
+				DEC3F4096CCD84527AD059F4 /* TabsBarView.swift in Sources */,
+				0CCDFA1B5872E8C5926C9388 /* Theme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0A34B9EAC3B5704F01CF319F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		19A092ECD25F4E981CA3645D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Notey/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adrian.notey;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		6D9A251059E705E861CFF5CE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		7239B4F233A14659A89E0B4C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Notey/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.adrian.notey;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		20926CDE94EC363DDBF41092 /* Build configuration list for PBXProject "Notey" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A34B9EAC3B5704F01CF319F /* Debug */,
+				6D9A251059E705E861CFF5CE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E1C94E028ED4BCB47E659619 /* Build configuration list for PBXNativeTarget "Notey" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				19A092ECD25F4E981CA3645D /* Debug */,
+				7239B4F233A14659A89E0B4C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5F516685AF648A5D5B8E1BC3 /* Project object */;
+}

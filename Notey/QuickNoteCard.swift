@@ -1,0 +1,259 @@
+import SwiftUI
+import SwiftData
+import PencilKit
+
+// MARK: - Anchors (top edge + corners) the quick note can be pinned to
+
+enum QuickNoteAnchor: String, CaseIterable, Codable {
+    case topLeading, top, topTrailing, bottomLeading, bottomTrailing
+
+    func center(in size: CGSize, cardSize: CGSize) -> CGPoint {
+        let margin: CGFloat = 22
+        let halfW = cardSize.width / 2
+        let halfH = cardSize.height / 2
+        switch self {
+        case .topLeading: return CGPoint(x: margin + halfW, y: margin + halfH)
+        case .top: return CGPoint(x: size.width / 2, y: margin + halfH)
+        case .topTrailing: return CGPoint(x: size.width - margin - halfW, y: margin + halfH)
+        case .bottomLeading: return CGPoint(x: margin + halfW, y: size.height - margin - halfH)
+        case .bottomTrailing: return CGPoint(x: size.width - margin - halfW, y: size.height - margin - halfH)
+        }
+    }
+
+    static func nearest(to point: CGPoint, in size: CGSize, cardSize: CGSize) -> QuickNoteAnchor {
+        allCases.min { a, b in
+            let pa = a.center(in: size, cardSize: cardSize)
+            let pb = b.center(in: size, cardSize: cardSize)
+            return hypot(point.x - pa.x, point.y - pa.y) < hypot(point.x - pb.x, point.y - pb.y)
+        } ?? .topTrailing
+    }
+}
+
+// MARK: - Floating slot state (persisted as JSON in AppStorage)
+
+// One floating quick note: either a full card at an anchor, or — after being
+// "thrown off screen" — a small tab docked to the left/right edge.
+struct QuickSlot: Codable, Equatable, Identifiable {
+    var id: UUID                 // the quick note's id
+    var anchor: QuickNoteAnchor = .topTrailing
+    var docked: Bool = false
+    var dockTrailing: Bool = true       // which edge the tab sits on
+    var dockFraction: Double = 0.3      // vertical position (0..1)
+
+    static let maxOpen = 3
+
+    static func decode(_ raw: String) -> [QuickSlot] {
+        guard let data = raw.data(using: .utf8),
+              let slots = try? JSONDecoder().decode([QuickSlot].self, from: data)
+        else { return [] }
+        return slots
+    }
+
+    static func encode(_ slots: [QuickSlot]) -> String {
+        guard let data = try? JSONEncoder().encode(slots) else { return "" }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+}
+
+// MARK: - Floating quick note: a small ruled paper card, nothing else
+
+struct QuickNoteCard: View {
+    let note: Note
+    let onClose: () -> Void
+    let onDragChanged: (CGSize) -> Void
+    let onDragEnded: (CGSize) -> Void
+
+    @Environment(\.modelContext) private var context
+    @State private var eraserActive = false
+    @State private var clearToken = 0
+    @State private var saveTask: Task<Void, Never>?
+
+    static let size = CGSize(width: 320, height: 360)
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            paper
+
+            VStack(spacing: 0) {
+                header
+                QuickPadCanvas(
+                    initialDrawing: note.drawing,
+                    eraser: eraserActive,
+                    clearToken: clearToken,
+                    onChange: scheduleSave
+                )
+            }
+
+            // Tiny tool row, tucked into the bottom corners.
+            VStack {
+                Spacer()
+                HStack(spacing: 2) {
+                    pasteHandle
+                    Spacer()
+                    miniTool("pencil.tip", active: !eraserActive) { eraserActive = false }
+                    miniTool("eraser", active: eraserActive) { eraserActive = true }
+                    miniTool("trash", active: false) {
+                        clearToken += 1
+                        scheduleSave(PKDrawing())
+                    }
+                }
+                .padding(6)
+            }
+        }
+        .frame(width: Self.size.width, height: Self.size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
+        .shadow(color: .black.opacity(0.22), radius: 16, y: 8)
+    }
+
+    // MARK: Paper (ruled index card)
+
+    private var paper: some View {
+        Canvas { ctx, size in
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Theme.card))
+            // Red headline rule under the header strip.
+            var rule = Path()
+            rule.move(to: CGPoint(x: 0, y: 34))
+            rule.addLine(to: CGPoint(x: size.width, y: 34))
+            ctx.stroke(rule, with: .color(Theme.pink.opacity(0.55)), lineWidth: 1.2)
+            // Faint ruled lines.
+            var lines = Path()
+            var y: CGFloat = 62
+            while y < size.height - 8 {
+                lines.move(to: CGPoint(x: 0, y: y))
+                lines.addLine(to: CGPoint(x: size.width, y: y))
+                y += 26
+            }
+            ctx.stroke(lines, with: .color(Color(hex: 0xBFD0DE).opacity(0.55)), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+
+    // MARK: Header (drag area + close)
+
+    private var header: some View {
+        HStack {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.border)
+                .padding(.leading, 10)
+            Spacer()
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Circle())
+            }
+            .padding(.trailing, 4)
+        }
+        .frame(height: 34)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(coordinateSpace: .global)
+                .onChanged { onDragChanged($0.translation) }
+                .onEnded { onDragEnded($0.translation) }
+        )
+    }
+
+    // Grab this handle and drop it onto an open note (canvas or its tab) to
+    // paste the card's ink there.
+    private var pasteHandle: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "square.on.square.dashed")
+                .font(.system(size: 11, weight: .medium))
+            Text("Wklej do notatki")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.horizontal, 8)
+        .frame(height: 26)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Theme.card.opacity(0.85))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        )
+        .draggable("quick:\(note.id.uuidString)")
+        .accessibilityLabel("Przeciągnij, aby wkleić do notatki")
+    }
+
+    private func miniTool(_ icon: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(active ? Theme.pink : Theme.textSecondary)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(active ? Theme.pinkSoft : Theme.card.opacity(0.85))
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Persistence
+
+    private func scheduleSave(_ drawing: PKDrawing) {
+        saveTask?.cancel()
+        let data = drawing.dataRepresentation()
+        saveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            note.drawingData = data
+            note.updatedAt = .now
+            try? context.save()
+        }
+    }
+}
+
+// MARK: - Bare PencilKit pad (1:1 scale, no zoom, no chrome)
+
+private struct QuickPadCanvas: UIViewRepresentable {
+    let initialDrawing: PKDrawing
+    var eraser: Bool
+    var clearToken: Int
+    let onChange: (PKDrawing) -> Void
+
+    func makeUIView(context: Context) -> PKCanvasView {
+        let canvas = PKCanvasView()
+        canvas.drawing = initialDrawing
+        canvas.backgroundColor = .clear
+        canvas.isOpaque = false
+        canvas.overrideUserInterfaceStyle = .light
+        canvas.isScrollEnabled = false
+        canvas.drawingPolicy = .anyInput
+        canvas.delegate = context.coordinator
+        context.coordinator.onChange = onChange
+        applyTool(canvas)
+        return canvas
+    }
+
+    func updateUIView(_ canvas: PKCanvasView, context: Context) {
+        context.coordinator.onChange = onChange
+        applyTool(canvas)
+        if context.coordinator.clearToken != clearToken {
+            context.coordinator.clearToken = clearToken
+            canvas.drawing = PKDrawing()
+        }
+    }
+
+    private func applyTool(_ canvas: PKCanvasView) {
+        canvas.tool = eraser
+            ? PKEraserTool(.vector)
+            : PKInkingTool(.pen, color: Theme.inkColors[0], width: 3)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, PKCanvasViewDelegate {
+        var onChange: ((PKDrawing) -> Void)?
+        var clearToken = 0
+
+        func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+            onChange?(canvasView.drawing)
+        }
+    }
+}
