@@ -138,7 +138,7 @@ struct FolderGridView: View {
                     onOpenFolder(nil)
                 } label: {
                     Text("Wszystkie notatki")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(folderID == nil ? Theme.navy : Theme.textSecondary)
                 }
                 ForEach(path) { folder in
@@ -153,7 +153,7 @@ struct FolderGridView: View {
                                 .fill(Color(hexString: folder.colorHex))
                                 .frame(width: 9, height: 9)
                             Text(folder.name)
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundStyle(folder.id == folderID ? Theme.navy : Theme.textSecondary)
                         }
                     }
@@ -319,9 +319,7 @@ struct FolderGridView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Group {
                     if note.isEmpty {
-                        HangingStars(strands: HangingStars.three, color: Theme.navy.opacity(0.24))
-                            .frame(width: 96, height: 64)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        Color.clear
                     } else {
                         NoteThumbnailView(note: note, fit: .content)
                     }
@@ -336,13 +334,20 @@ struct FolderGridView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(note.title)
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.navy)
+                        .foregroundStyle(.white)
                         .lineLimit(1)
                     Text(note.updatedAt.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: 10))
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(.white.opacity(0.8))
                 }
                 .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    Image("blue_texture")
+                        .resizable()
+                        .scaledToFill()
+                )
+                .clipped()
             }
             .background(RoundedRectangle(cornerRadius: 16).fill(Theme.card))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.border, lineWidth: 1))

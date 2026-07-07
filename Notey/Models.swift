@@ -47,6 +47,27 @@ enum NoteLayout: String, Codable {
     case infinite
 }
 
+enum PageOrientation: String, Codable {
+    case portrait, landscape
+}
+
+// Decorative background printed on every page card (pages layout only).
+enum PageTemplate: String, Codable, CaseIterable {
+    case none, meander, waves, stars
+    // User-provided image, stored in Note.templateData.
+    case custom
+
+    var label: String {
+        switch self {
+        case .none: return "Brak"
+        case .meander: return "Meander"
+        case .waves: return "Fale"
+        case .stars: return "Gwiazdki"
+        case .custom: return "Własny"
+        }
+    }
+}
+
 @Model
 final class Note {
     @Attribute(.unique) var id: UUID
@@ -61,6 +82,11 @@ final class Note {
     var layoutRaw: String = NoteLayout.pages.rawValue
     // Custom paper tint (hex). nil = default cream card.
     var paperColorHex: String?
+    // Page orientation and decorative template (pages layout only).
+    var orientationRaw: String = PageOrientation.portrait.rawValue
+    var templateRaw: String = PageTemplate.none.rawValue
+    // The user-uploaded template image (JPEG), used when template == .custom.
+    @Attribute(.externalStorage) var templateData: Data?
     var createdAt: Date
     var updatedAt: Date
 
@@ -87,6 +113,16 @@ final class Note {
     var layout: NoteLayout {
         get { NoteLayout(rawValue: layoutRaw) ?? .pages }
         set { layoutRaw = newValue.rawValue }
+    }
+
+    var orientation: PageOrientation {
+        get { PageOrientation(rawValue: orientationRaw) ?? .portrait }
+        set { orientationRaw = newValue.rawValue }
+    }
+
+    var template: PageTemplate {
+        get { PageTemplate(rawValue: templateRaw) ?? .none }
+        set { templateRaw = newValue.rawValue }
     }
 
     var drawing: PKDrawing {
@@ -155,6 +191,12 @@ struct AnnotationElement: Codable, Equatable, Identifiable {
 enum CanvasPage {
     // Portrait page used by all notes; mini views scale it down uniformly.
     static let size = CGSize(width: 1000, height: 1400)
+
+    static func size(for orientation: PageOrientation) -> CGSize {
+        orientation == .landscape
+            ? CGSize(width: size.height, height: size.width)
+            : size
+    }
     // Vertical gap between stacked pages of a multi-page note.
     static let gap: CGFloat = 28
     // "Infinite canvas" sheet: this is only the STARTING window (56-aligned
@@ -166,9 +208,10 @@ enum CanvasPage {
     // of an infinite note; growth tops it up to 1.5x.
     static let infiniteRunway: CGFloat = 30_000
 
-    static func totalSize(pages: Int) -> CGSize {
+    static func totalSize(pages: Int, orientation: PageOrientation = .portrait) -> CGSize {
+        let s = size(for: orientation)
         let n = CGFloat(max(1, pages))
-        return CGSize(width: size.width, height: size.height * n + gap * (n - 1))
+        return CGSize(width: s.width, height: s.height * n + gap * (n - 1))
     }
 }
 

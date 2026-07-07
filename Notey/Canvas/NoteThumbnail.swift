@@ -27,7 +27,15 @@ enum NoteThumbnail {
         let drawing = note.drawing
         let elements = note.elements
         let paper = note.paperColorHex.map { UIColor(hexString: $0) } ?? UIColor(Theme.card)
-        let page = CGRect(origin: .zero, size: CanvasPage.size)
+        let pageSize = note.layout == .pages
+            ? CanvasPage.size(for: note.orientation)
+            : CanvasPage.size
+        let page = CGRect(origin: .zero, size: pageSize)
+        let templateImage: UIImage? = note.layout == .pages
+            ? note.template == .custom
+                ? note.templateData.flatMap(UIImage.init(data:))
+                : nil
+            : nil
 
         // Region to display
         var region = page
@@ -61,6 +69,16 @@ enum NoteThumbnail {
                 y: (size.height - region.height * scale) / 2 - region.minY * scale
             )
             c.scaleBy(x: scale, y: scale)
+
+            // Decorative template first (page coords), under everything else.
+            if note.layout == .pages, note.template != .none {
+                PageTemplateRenderer.draw(
+                    note.template,
+                    pageSize: pageSize,
+                    custom: templateImage,
+                    in: c
+                )
+            }
 
             // Canvas z-order: photos, annotation cards, then all ink on top.
             for element in elements.images {

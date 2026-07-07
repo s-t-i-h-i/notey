@@ -61,25 +61,33 @@ struct HangingStars: View {
         .init(x: 0.88, drop: 0.46, size: 0.28, tilt: -8),
     ]
 
+    /// Thread + star outline per strand — shared with the page-template
+    /// renderer so canvas templates match the SwiftUI decorations exactly.
+    static func geometry(for strands: [Strand], in size: CGSize) -> [(thread: Path, star: Path)] {
+        strands.map { strand in
+            let x = strand.x * size.width
+            let side = strand.size * size.height
+            let stringEnd = max(0, strand.drop * size.height - side)
+
+            var thread = Path()
+            thread.move(to: CGPoint(x: x, y: 0))
+            thread.addLine(to: CGPoint(x: x, y: stringEnd))
+
+            let rect = CGRect(x: x - side / 2, y: stringEnd, width: side, height: side)
+            let rotation = CGAffineTransform(translationX: rect.midX, y: rect.midY)
+                .rotated(by: strand.tilt * .pi / 180)
+                .translatedBy(x: -rect.midX, y: -rect.midY)
+            let star = StarShape().path(in: rect).applying(rotation)
+            return (thread, star)
+        }
+    }
+
     var body: some View {
         Canvas { context, size in
-            for (index, strand) in strands.enumerated() {
-                let x = strand.x * size.width
-                let side = strand.size * size.height
-                let stringEnd = max(0, strand.drop * size.height - side)
+            for (index, piece) in Self.geometry(for: strands, in: size).enumerated() {
                 let tone = index == accentIndex ? accentColor : color
-
-                var thread = Path()
-                thread.move(to: CGPoint(x: x, y: 0))
-                thread.addLine(to: CGPoint(x: x, y: stringEnd))
-                context.stroke(thread, with: .color(tone.opacity(0.75)), lineWidth: lineWidth)
-
-                let rect = CGRect(x: x - side / 2, y: stringEnd, width: side, height: side)
-                let rotation = CGAffineTransform(translationX: rect.midX, y: rect.midY)
-                    .rotated(by: strand.tilt * .pi / 180)
-                    .translatedBy(x: -rect.midX, y: -rect.midY)
-                let star = StarShape().path(in: rect).applying(rotation)
-                context.fill(star, with: .color(tone))
+                context.stroke(piece.thread, with: .color(tone.opacity(0.75)), lineWidth: lineWidth)
+                context.fill(piece.star, with: .color(tone))
             }
         }
         .allowsHitTesting(false)
@@ -93,46 +101,51 @@ struct WaveScroll: View {
     var color: Color = Theme.navy.opacity(0.16)
     var lineWidth: CGFloat = 1.3
 
+    /// The whole band as one path — shared with the page-template renderer.
+    static func path(in size: CGSize) -> Path {
+        var path = Path()
+        let h = size.height
+        // Waves overlap like the artwork: each crest rises out from
+        // under the previous curl.
+        let waveWidth = h * 1.5
+        let stride = h * 1.05
+        guard stride > 0, size.width >= waveWidth else { return path }
+        let count = Int((size.width - waveWidth) / stride) + 1
+        let width = waveWidth + CGFloat(count - 1) * stride
+        let startX = (size.width - width) / 2
+
+        for i in 0..<count {
+            let x0 = startX + CGFloat(i) * stride
+            // Swell from the trough up and over the crest…
+            let crest = CGPoint(x: x0 + waveWidth * 0.86, y: h * 0.10)
+            path.move(to: CGPoint(x: x0, y: h * 0.86))
+            path.addCurve(
+                to: crest,
+                control1: CGPoint(x: x0 + waveWidth * 0.52, y: h * 1.02),
+                control2: CGPoint(x: x0 + waveWidth * 0.72, y: h * 0.04)
+            )
+            // …then break forward and curl into an open spiral.
+            let center = CGPoint(x: x0 + waveWidth * 0.70, y: h * 0.44)
+            var radius = hypot(crest.x - center.x, crest.y - center.y)
+            var angle = atan2(crest.y - center.y, crest.x - center.x)
+            let steps = 24
+            let shrink = pow(0.34, 1 / CGFloat(steps))
+            for _ in 0..<steps {
+                angle += .pi * 1.3 / CGFloat(steps)
+                radius *= shrink
+                path.addLine(to: CGPoint(
+                    x: center.x + cos(angle) * radius,
+                    y: center.y + sin(angle) * radius
+                ))
+            }
+        }
+        return path
+    }
+
     var body: some View {
         Canvas { context, size in
-            let h = size.height
-            // Waves overlap like the artwork: each crest rises out from
-            // under the previous curl.
-            let waveWidth = h * 1.5
-            let stride = h * 1.05
-            guard stride > 0, size.width >= waveWidth else { return }
-            let count = Int((size.width - waveWidth) / stride) + 1
-            let width = waveWidth + CGFloat(count - 1) * stride
-            let startX = (size.width - width) / 2
             let style = StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
-
-            for i in 0..<count {
-                let x0 = startX + CGFloat(i) * stride
-                var path = Path()
-                // Swell from the trough up and over the crest…
-                let crest = CGPoint(x: x0 + waveWidth * 0.86, y: h * 0.10)
-                path.move(to: CGPoint(x: x0, y: h * 0.86))
-                path.addCurve(
-                    to: crest,
-                    control1: CGPoint(x: x0 + waveWidth * 0.52, y: h * 1.02),
-                    control2: CGPoint(x: x0 + waveWidth * 0.72, y: h * 0.04)
-                )
-                // …then break forward and curl into an open spiral.
-                let center = CGPoint(x: x0 + waveWidth * 0.70, y: h * 0.44)
-                var radius = hypot(crest.x - center.x, crest.y - center.y)
-                var angle = atan2(crest.y - center.y, crest.x - center.x)
-                let steps = 24
-                let shrink = pow(0.34, 1 / CGFloat(steps))
-                for _ in 0..<steps {
-                    angle += .pi * 1.3 / CGFloat(steps)
-                    radius *= shrink
-                    path.addLine(to: CGPoint(
-                        x: center.x + cos(angle) * radius,
-                        y: center.y + sin(angle) * radius
-                    ))
-                }
-                context.stroke(path, with: .color(color), style: style)
-            }
+            context.stroke(Self.path(in: size), with: .color(color), style: style)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -145,33 +158,37 @@ struct MeanderRule: View {
     var color: Color = Theme.navy.opacity(0.2)
     var lineWidth: CGFloat = 1
 
+    static func path(in size: CGSize, lineWidth: CGFloat = 1) -> Path {
+        var path = Path()
+        let top = lineWidth / 2
+        let bottom = size.height - lineWidth / 2
+        let span = bottom - top
+        let unit = size.height
+        guard unit > 0, size.width >= unit else { return path }
+        let count = Int(size.width / unit)
+        let width = CGFloat(count) * unit
+        let startX = (size.width - width) / 2
+
+        path.move(to: CGPoint(x: startX, y: bottom))
+        path.addLine(to: CGPoint(x: startX + width, y: bottom))
+        for i in 0..<count {
+            let x = startX + CGFloat(i) * unit + unit * 0.14
+            let w = unit * 0.62
+            path.move(to: CGPoint(x: x, y: bottom))
+            path.addLine(to: CGPoint(x: x, y: top))
+            path.addLine(to: CGPoint(x: x + w, y: top))
+            path.addLine(to: CGPoint(x: x + w, y: top + span * 0.62))
+            path.addLine(to: CGPoint(x: x + w * 0.42, y: top + span * 0.62))
+            path.addLine(to: CGPoint(x: x + w * 0.42, y: top + span * 0.32))
+            path.addLine(to: CGPoint(x: x + w * 0.74, y: top + span * 0.32))
+        }
+        return path
+    }
+
     var body: some View {
         Canvas { context, size in
-            let top = lineWidth / 2
-            let bottom = size.height - lineWidth / 2
-            let span = bottom - top
-            let unit = size.height
-            guard unit > 0, size.width >= unit else { return }
-            let count = Int(size.width / unit)
-            let width = CGFloat(count) * unit
-            let startX = (size.width - width) / 2
             let style = StrokeStyle(lineWidth: lineWidth, lineCap: .butt, lineJoin: .miter)
-
-            var path = Path()
-            path.move(to: CGPoint(x: startX, y: bottom))
-            path.addLine(to: CGPoint(x: startX + width, y: bottom))
-            for i in 0..<count {
-                let x = startX + CGFloat(i) * unit + unit * 0.14
-                let w = unit * 0.62
-                path.move(to: CGPoint(x: x, y: bottom))
-                path.addLine(to: CGPoint(x: x, y: top))
-                path.addLine(to: CGPoint(x: x + w, y: top))
-                path.addLine(to: CGPoint(x: x + w, y: top + span * 0.62))
-                path.addLine(to: CGPoint(x: x + w * 0.42, y: top + span * 0.62))
-                path.addLine(to: CGPoint(x: x + w * 0.42, y: top + span * 0.32))
-                path.addLine(to: CGPoint(x: x + w * 0.74, y: top + span * 0.32))
-            }
-            context.stroke(path, with: .color(color), style: style)
+            context.stroke(Self.path(in: size, lineWidth: lineWidth), with: .color(color), style: style)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -245,5 +262,107 @@ struct LinenBackground: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Page templates (decorative background printed on kartka pages)
+
+// Renders a PageTemplate into a full page so the live canvas, PDF export and
+// thumbnails all draw the same delicate ornament under the handwriting. Navy
+// ink at low opacity keeps writing perfectly legible. The `custom` case draws
+// a user-supplied image, faded, filling the page.
+enum PageTemplateRenderer {
+    private static var ink: UIColor { UIColor(Theme.navy) }
+
+    /// A page-sized image, or nil when there is nothing to draw. Used by the
+    /// canvas page cards (set as CALayer contents).
+    static func image(for template: PageTemplate, pageSize: CGSize, custom: UIImage?) -> UIImage? {
+        guard template != .none, pageSize.width > 1, pageSize.height > 1 else { return nil }
+        if template == .custom, custom == nil { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 2
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: pageSize, format: format).image { ctx in
+            draw(template, pageSize: pageSize, custom: custom, in: ctx.cgContext)
+        }
+    }
+
+    /// Draws the template directly into a context already set up in page
+    /// coordinates (PDF export / thumbnails).
+    static func draw(_ template: PageTemplate, pageSize: CGSize, custom: UIImage?, in cg: CGContext) {
+        switch template {
+        case .none:
+            return
+
+        case .custom:
+            guard let custom else { return }
+            let target = CGRect(origin: .zero, size: pageSize)
+            cg.saveGState()
+            cg.clip(to: target)
+            cg.setAlpha(0.16)
+            custom.draw(in: aspectFill(custom.size, into: target))
+            cg.restoreGState()
+
+        case .meander:
+            let margin = pageSize.width * 0.06
+            let band = CGSize(width: pageSize.width - margin * 2,
+                              height: max(18, pageSize.width * 0.03))
+            let ribbon = MeanderRule.path(in: band, lineWidth: 2)
+            // Top band.
+            stroke(ribbon, offset: CGPoint(x: margin, y: margin),
+                   lineWidth: 2, color: ink.withAlphaComponent(0.2), in: cg)
+            // Bottom band, mirrored vertically so the hooks point inward.
+            cg.saveGState()
+            cg.translateBy(x: margin, y: pageSize.height - margin)
+            cg.scaleBy(x: 1, y: -1)
+            addPath(ribbon, lineWidth: 2, color: ink.withAlphaComponent(0.2), in: cg)
+            cg.restoreGState()
+
+        case .waves:
+            let band = CGSize(width: pageSize.width,
+                              height: max(60, pageSize.width * 0.11))
+            let waves = WaveScroll.path(in: band)
+            stroke(waves, offset: CGPoint(x: 0, y: pageSize.height - band.height),
+                   lineWidth: 2.2, color: ink.withAlphaComponent(0.16), in: cg)
+
+        case .stars:
+            let band = CGSize(width: pageSize.width * 0.9, height: pageSize.width * 0.2)
+            let originX = pageSize.width * 0.05
+            for (i, piece) in HangingStars.geometry(for: HangingStars.five, in: band).enumerated() {
+                let thread = piece.thread.applying(.init(translationX: originX, y: 0))
+                let star = piece.star.applying(.init(translationX: originX, y: 0))
+                addPath(thread, lineWidth: 1.6, color: ink.withAlphaComponent(0.4), in: cg)
+                let starColor = (i == 3 ? UIColor(Theme.pink) : ink).withAlphaComponent(i == 3 ? 0.55 : 0.42)
+                cg.addPath(star.cgPath)
+                cg.setFillColor(starColor.cgColor)
+                cg.fillPath()
+            }
+        }
+    }
+
+    // MARK: Helpers
+
+    private static func aspectFill(_ imageSize: CGSize, into rect: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return rect }
+        let scale = max(rect.width / imageSize.width, rect.height / imageSize.height)
+        let w = imageSize.width * scale
+        let h = imageSize.height * scale
+        return CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+    }
+
+    private static func stroke(_ path: Path, offset: CGPoint, lineWidth: CGFloat, color: UIColor, in cg: CGContext) {
+        cg.saveGState()
+        cg.translateBy(x: offset.x, y: offset.y)
+        addPath(path, lineWidth: lineWidth, color: color, in: cg)
+        cg.restoreGState()
+    }
+
+    private static func addPath(_ path: Path, lineWidth: CGFloat, color: UIColor, in cg: CGContext) {
+        cg.addPath(path.cgPath)
+        cg.setStrokeColor(color.cgColor)
+        cg.setLineWidth(lineWidth)
+        cg.setLineCap(.round)
+        cg.setLineJoin(.round)
+        cg.strokePath()
     }
 }

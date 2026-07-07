@@ -28,6 +28,8 @@ struct CanvasEditorView: View {
     @State private var pdfURL: URL?
     @State private var saveTask: Task<Void, Never>?
     @State private var pageCount: Int = 1
+    // Decoded custom page template, delivered to the canvas.
+    @State private var customTemplate: UIImage?
 
     private var proxy: CanvasProxy { externalProxy ?? ownProxy }
 
@@ -39,6 +41,7 @@ struct CanvasEditorView: View {
                 initialDrawing: note.drawing,
                 initialElements: note.elements,
                 config: config,
+                customTemplateImage: customTemplate,
                 proxy: proxy,
                 onChange: { drawing, elements in
                     scheduleSave(drawing: drawing, elements: elements)
@@ -74,6 +77,9 @@ struct CanvasEditorView: View {
             config.background = note.background
             config.paperColorHex = note.paperColorHex
             config.layout = note.layout
+            config.orientation = note.orientation
+            config.template = note.template
+            refreshCustomTemplate()
             pageCount = max(1, note.elements.pages ?? 1)
             if autoOpenSettingsID?.wrappedValue == note.id {
                 autoOpenSettingsID?.wrappedValue = nil
@@ -81,6 +87,14 @@ struct CanvasEditorView: View {
                 showSettings = true
             }
         }
+        // The settings sheet mutates the note; mirror the new values into the
+        // live canvas config and (re)decode the custom template image.
+        .onChange(of: note.orientationRaw) { _, _ in config.orientation = note.orientation }
+        .onChange(of: note.templateRaw) { _, _ in
+            config.template = note.template
+            refreshCustomTemplate()
+        }
+        .onChange(of: note.templateData) { _, _ in refreshCustomTemplate() }
         .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
@@ -120,6 +134,18 @@ struct CanvasEditorView: View {
         }
         proxy.pasteDrawing(quick.drawing, atViewPoint: location)
         return true
+    }
+
+    // MARK: Custom template
+
+    private func refreshCustomTemplate() {
+        if note.template == .custom, let data = note.templateData, let image = UIImage(data: data) {
+            customTemplate = image
+            config.customTemplateKey = String(data.count)
+        } else {
+            customTemplate = nil
+            config.customTemplateKey = nil
+        }
     }
 
     // MARK: Persistence (debounced)

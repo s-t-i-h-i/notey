@@ -148,14 +148,13 @@ struct SidebarView: View {
             .padding(.horizontal, 6)
         }
 
-        // Wave scroll footer — a quiet nod to the Greek waves artwork.
-        WaveScroll(color: Theme.navy.opacity(0.18), lineWidth: 1.5)
-            .frame(height: 30)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
+        // Obrazek wklejony zamiast fal
+        Image("sidebar_waves")
+            .resizable()
+            .scaledToFit()
         }
         .background(LinenBackground())
+        .ignoresSafeArea(edges: .bottom)
         .alert("Zmień nazwę folderu", isPresented: Binding(
             get: { renamingFolder != nil },
             set: { if !$0 { renamingFolder = nil } }

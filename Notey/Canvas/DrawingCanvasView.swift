@@ -101,6 +101,12 @@ struct CanvasToolConfig: Equatable {
     var background: CanvasBackground = .dots
     var paperColorHex: String?
     var layout: NoteLayout = .pages
+    var orientation: PageOrientation = .portrait
+    var template: PageTemplate = .none
+    // Cheap change token for the custom template image (its byte count). The
+    // image itself is delivered separately (DrawingCanvas.customTemplateImage)
+    // so it stays out of the per-update Equatable comparison.
+    var customTemplateKey: String?
 }
 
 enum SelectedElement: Equatable {
@@ -134,6 +140,9 @@ struct DrawingCanvas: UIViewRepresentable {
     let initialElements: CanvasElements
     var config: CanvasToolConfig
     var compact: Bool = false
+    // Decoded custom template image (kept out of `config` so its bytes don't
+    // enter the per-update Equatable check — change is tracked via config.customTemplateKey).
+    var customTemplateImage: UIImage? = nil
     let proxy: CanvasProxy
     let onChange: (PKDrawing, CanvasElements) -> Void
     let onSelection: (SelectedElement?) -> Void
@@ -146,6 +155,7 @@ struct DrawingCanvas: UIViewRepresentable {
         )
         container.onChange = onChange
         container.onSelection = onSelection
+        container.customTemplateImage = customTemplateImage
         container.apply(config: config)
         proxy.container = container
         return container
@@ -154,6 +164,7 @@ struct DrawingCanvas: UIViewRepresentable {
     func updateUIView(_ container: CanvasContainer, context: Context) {
         container.onChange = onChange
         container.onSelection = onSelection
+        container.customTemplateImage = customTemplateImage
         container.apply(config: config)
         proxy.container = container
     }
@@ -256,6 +267,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private let pagesHost = UIView()
     private var pageCards: [UIView] = []
     private var patternLayers: [CAShapeLayer] = []
+    private var templateLayers: [CALayer] = []
+    // Delivered by DrawingCanvas; used to render the .custom page template.
+    var customTemplateImage: UIImage?
     private let selectionLayer = ImmediateShapeLayer()
     private let draftLayer = ImmediateShapeLayer()
 
@@ -272,7 +286,11 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         didSet { refreshSelectionLayer(); onSelection?(selected); updateGestureStates() }
     }
 
-    private let page = CanvasPage.size
+    // Logical page size — landscape swaps the axes (pages layout only; the
+    // infinite sheet is always axis-neutral).
+    private var page: CGSize {
+        config.layout == .pages ? CanvasPage.size(for: config.orientation) : CanvasPage.size
+    }
     private var pagesCount: Int { max(1, elements.pages ?? 1) }
     // Infinite layout: the sheet is a growing window, not a fixed size. It is
     // extended whenever the viewport or the ink nears an edge, so the canvas
@@ -282,7 +300,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         config.layout == .infinite ? infiniteSheet : page
     }
     private var totalSize: CGSize {
-        config.layout == .infinite ? infiniteSheet : CanvasPage.totalSize(pages: pagesCount)
+        config.layout == .infinite
+            ? infiniteSheet
+            : CanvasPage.totalSize(pages: pagesCount, orientation: config.orientation)
     }
     // Left/top growth must move the whole coordinate space — deferred while
     // ink or a drag is mid-flight, retried from the matching "did end" hooks.
@@ -447,6 +467,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         for card in pageCards { card.removeFromSuperview() }
         pageCards.removeAll()
         patternLayers.removeAll()
+        templateLayers.removeAll()
 
         pagesHost.frame = CGRect(origin: .zero, size: totalSize)
 
@@ -471,10 +492,20 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             pattern.frame = CGRect(origin: .zero, size: frame.size)
             card.layer.addSublayer(pattern)
             patternLayers.append(pattern)
+            // Decorative template sits above the ruling pattern, still under
+            // the ink (all card layers are below PencilKit's rendering).
+            let template = CALayer()
+            template.frame = CGRect(origin: .zero, size: frame.size)
+            template.contentsGravity = .resizeAspect
+            template.masksToBounds = true
+            template.cornerRadius = card.layer.cornerRadius
+            card.layer.addSublayer(template)
+            templateLayers.append(template)
             pagesHost.addSubview(card)
             pageCards.append(card)
         }
         redrawPattern()
+        redrawTemplate()
         updateGeometry()
     }
 
@@ -647,6 +678,11 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             if config.layout == .infinite, didInitialLayout {
                 centerViewportOnContent()
             }
+        } else if previousConfig.orientation != config.orientation {
+            // Portrait <-> landscape: the page changes size, so rebuild cards
+            // and refit. Content keeps its page coordinates.
+            rebuildPages()
+            updateGeometry(resetZoom: true)
         } else if previousConfig.background != config.background {
             redrawPattern()
         }
@@ -656,6 +692,13 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             } else {
                 for card in pageCards { card.backgroundColor = paperUIColor }
             }
+        }
+        // Template redraw (a full rebuild above already refreshed it).
+        let rebuilt = previousConfig.layout != config.layout || previousConfig.orientation != config.orientation
+        if !rebuilt,
+           previousConfig.template != config.template
+            || previousConfig.customTemplateKey != config.customTemplateKey {
+            redrawTemplate()
         }
     }
 
@@ -921,6 +964,19 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 }
             }
         return UIColor(patternImage: tile)
+    }
+
+    // MARK: Template (decorative page background)
+
+    private func redrawTemplate() {
+        // Templates decorate real kartka pages only.
+        let image: UIImage? = (config.layout == .pages && !compact)
+            ? PageTemplateRenderer.image(for: config.template, pageSize: page, custom: customTemplateImage)
+            : nil
+        let contents = image?.cgImage
+        for layer in templateLayers {
+            layer.contents = contents
+        }
     }
 
     // MARK: Element views
@@ -1520,7 +1576,10 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 drawing: canvasView.drawing,
                 elements: elements,
                 paperHex: config.paperColorHex,
-                layout: config.layout
+                layout: config.layout,
+                orientation: config.orientation,
+                template: config.template,
+                customImage: customTemplateImage
             )],
             title: title
         )

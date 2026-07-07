@@ -83,14 +83,6 @@ struct QuickNotesScreen: View {
 
     private var emptyState: some View {
         VStack(spacing: 22) {
-            // Stars hang from the card's top edge, one blushing pink.
-            HangingStars(
-                strands: HangingStars.five,
-                color: Theme.navy.opacity(0.72),
-                accentIndex: 1,
-                accentColor: Theme.pink
-            )
-            .frame(width: 230, height: 100)
             Text("Brak szybkich notatek — dodaj pierwszą czarnym uchwytem przy prawej krawędzi")
                 .font(.system(size: 13, weight: .medium))
                 .multilineTextAlignment(.center)

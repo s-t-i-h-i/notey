@@ -7,7 +7,15 @@ import PencilKit
 @MainActor
 enum NoteExporter {
 
-    typealias NotePayload = (drawing: PKDrawing, elements: CanvasElements, paperHex: String?, layout: NoteLayout)
+    typealias NotePayload = (
+        drawing: PKDrawing,
+        elements: CanvasElements,
+        paperHex: String?,
+        layout: NoteLayout,
+        orientation: PageOrientation,
+        template: PageTemplate,
+        customImage: UIImage?
+    )
 
     /// All regular notes of a folder and its subfolders (depth-first).
     static func notesInSubtree(of folder: Folder) -> [Note] {
@@ -25,18 +33,33 @@ enum NoteExporter {
 
     static func exportPDF(notes: [Note], title: String) -> URL? {
         exportPDF(
-            pages: notes.map { ($0.drawing, $0.elements, $0.paperColorHex, $0.layout) },
+            pages: notes.map {
+                (
+                    $0.drawing,
+                    $0.elements,
+                    $0.paperColorHex,
+                    $0.layout,
+                    $0.orientation,
+                    $0.template,
+                    $0.templateData.flatMap(UIImage.init(data:))
+                )
+            },
             title: title
         )
     }
 
     static func exportPDF(pages payloads: [NotePayload], title: String) -> URL? {
         guard !payloads.isEmpty else { return nil }
-        let pageRect = CGRect(origin: .zero, size: CanvasPage.size)
-        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        // Each page declares its own media box, so mixed orientations render
+        // correctly; this is only the default for the first beginPage.
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(origin: .zero, size: CanvasPage.size))
 
         let data = renderer.pdfData { ctx in
             for payload in payloads {
+                let pageSize = payload.layout == .pages
+                    ? CanvasPage.size(for: payload.orientation)
+                    : CanvasPage.size
+                let pageRect = CGRect(origin: .zero, size: pageSize)
                 // Decode each image once per note, not once per page.
                 var decoded: [UUID: UIImage] = [:]
                 for element in payload.elements.images {
@@ -45,7 +68,7 @@ enum NoteExporter {
                 let paper = payload.paperHex.map { UIColor(hexString: $0) } ?? UIColor(Theme.card)
 
                 if payload.layout == .infinite {
-                    ctx.beginPage()
+                    ctx.beginPage(withBounds: pageRect, pageInfo: [:])
                     let cg = ctx.cgContext
                     paper.setFill()
                     cg.fill(pageRect)
@@ -77,16 +100,23 @@ enum NoteExporter {
 
                 let pages = max(1, payload.elements.pages ?? 1)
                 for pageIndex in 0..<pages {
-                    ctx.beginPage()
+                    ctx.beginPage(withBounds: pageRect, pageInfo: [:])
                     let cg = ctx.cgContext
                     paper.setFill()
                     cg.fill(pageRect)
+                    // Decorative template under the writing, in page coords.
+                    PageTemplateRenderer.draw(
+                        payload.template,
+                        pageSize: pageSize,
+                        custom: payload.customImage,
+                        in: cg
+                    )
 
                     let sourceRect = CGRect(
                         x: 0,
-                        y: CGFloat(pageIndex) * (CanvasPage.size.height + CanvasPage.gap),
-                        width: CanvasPage.size.width,
-                        height: CanvasPage.size.height
+                        y: CGFloat(pageIndex) * (pageSize.height + CanvasPage.gap),
+                        width: pageSize.width,
+                        height: pageSize.height
                     )
                     cg.saveGState()
                     cg.translateBy(x: 0, y: -sourceRect.minY)
