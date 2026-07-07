@@ -4,7 +4,6 @@ import PencilKit
 
 enum CalendarMode: String, CaseIterable, Identifiable {
     case day = "Dzień"
-    case week = "Tydzień"
     case month = "Miesiąc"
     case year = "Rok"
     var id: String { rawValue }
@@ -53,16 +52,6 @@ struct CalendarScreen: View {
             switch mode {
             case .month:
                 MonthGridView(
-                    date: date,
-                    notesByKey: notesByKey,
-                    config: $inkConfig
-                ) { key in
-                    NoteStore.calendarNote(for: key, in: context)
-                    expandedDay = DayKey(key: key)
-                }
-                .id(tileRefresh)
-            case .week:
-                WeekView(
                     date: date,
                     notesByKey: notesByKey,
                     config: $inkConfig
@@ -136,7 +125,6 @@ struct CalendarScreen: View {
     private var title: String {
         switch mode {
         case .day: return DateUtils.dayTitle(date)
-        case .week: return DateUtils.weekTitle(date)
         case .month: return DateUtils.monthTitle(date)
         case .year: return String(DateUtils.year(date))
         }
@@ -145,7 +133,6 @@ struct CalendarScreen: View {
     private func navigate(_ dir: Int) {
         switch mode {
         case .day: date = DateUtils.addDays(date, dir)
-        case .week: date = DateUtils.addDays(date, dir * 7)
         case .month: date = DateUtils.addMonths(date, dir)
         case .year: date = DateUtils.addYears(date, dir)
         }
@@ -267,11 +254,11 @@ private struct MonthGridView: View {
     var body: some View {
         GeometryReader { geo in
             let days = DateUtils.monthGrid(for: date)
-            // Generous tiles: at least 190pt wide and ~2 rows on screen; the
+            // Generous tiles: at least 230pt wide and ~3 rows on screen; the
             // grid scrolls in both directions when it outgrows the window.
-            let tileWidth = max(190, (geo.size.width - 24 - 6 * 8) / 7)
+            let tileWidth = max(230, (geo.size.width - 24 - 6 * 8) / 7)
             let gridWidth = tileWidth * 7 + 6 * 8
-            let tileHeight = max(280, (geo.size.height - 130) / 2.2)
+            let tileHeight = max(186, (geo.size.height - 130) / 3.3)
             let columns = Array(repeating: GridItem(.fixed(tileWidth), spacing: 8), count: 7)
 
             VStack(spacing: 0) {
@@ -366,60 +353,6 @@ private struct MonthDayTile: View {
                 .stroke(DateUtils.isToday(day) ? Theme.pink.opacity(0.7) : Theme.border, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-}
-
-// MARK: - Week: seven live canvases, write directly
-
-private struct WeekView: View {
-    let date: Date
-    let notesByKey: [String: Note]
-    @Binding var config: CanvasToolConfig
-    let onExpand: (String) -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            CalendarToolRow(config: $config)
-                .padding(.horizontal, 12)
-                .padding(.top, 10)
-            HStack(spacing: 8) {
-                ForEach(DateUtils.weekDays(for: date), id: \.self) { day in
-                    let key = DateUtils.dateKey(day)
-                    VStack(spacing: 0) {
-                        Button {
-                            onExpand(key)
-                        } label: {
-                            HStack {
-                                Text(DateUtils.weekdays[DateUtils.weekdayIndex(day)].uppercased())
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(Theme.textSecondary)
-                                Spacer()
-                                Text("\(DateUtils.day(day))")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(DateUtils.isToday(day) ? Theme.card : Theme.navy)
-                                    .frame(minWidth: 22, minHeight: 22)
-                                    .background(Circle().fill(DateUtils.isToday(day) ? Theme.pink : .clear))
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 6)
-                        }
-                        .buttonStyle(.plain)
-
-                        Divider().overlay(Theme.border)
-
-                        CalendarDayCanvas(dateKey: key, note: notesByKey[key], config: config)
-                    }
-                    .background(RoundedRectangle(cornerRadius: 14).fill(Theme.card))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(DateUtils.isToday(day) ? Theme.pink.opacity(0.7) : Theme.border, lineWidth: 1)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 12)
-        }
     }
 }
 

@@ -198,7 +198,8 @@ struct QuickNoteCard: View {
 
     private func scheduleSave(_ drawing: PKDrawing) {
         saveTask?.cancel()
-        let data = drawing.dataRepresentation()
+        let cropped = drawing.cropped(to: CGRect(origin: .zero, size: Self.size))
+        let data = cropped.dataRepresentation()
         saveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
@@ -206,6 +207,38 @@ struct QuickNoteCard: View {
             note.updatedAt = .now
             try? context.save()
         }
+    }
+}
+
+extension PKDrawing {
+    func cropped(to bounds: CGRect) -> PKDrawing {
+        var newStrokes: [PKStroke] = []
+        for stroke in self.strokes {
+            if bounds.contains(stroke.renderBounds) {
+                newStrokes.append(stroke)
+                continue
+            }
+            var currentPoints: [PKStrokePoint] = []
+            for point in stroke.path {
+                let loc = point.location.applying(stroke.transform)
+                if bounds.contains(loc) {
+                    currentPoints.append(point)
+                } else {
+                    if currentPoints.count > 1 {
+                        let newPath = PKStrokePath(controlPoints: currentPoints, creationDate: stroke.path.creationDate)
+                        let newStroke = PKStroke(ink: stroke.ink, path: newPath, transform: stroke.transform, mask: stroke.mask)
+                        newStrokes.append(newStroke)
+                    }
+                    currentPoints = []
+                }
+            }
+            if currentPoints.count > 1 {
+                let newPath = PKStrokePath(controlPoints: currentPoints, creationDate: stroke.path.creationDate)
+                let newStroke = PKStroke(ink: stroke.ink, path: newPath, transform: stroke.transform, mask: stroke.mask)
+                newStrokes.append(newStroke)
+            }
+        }
+        return PKDrawing(strokes: newStrokes)
     }
 }
 
@@ -224,6 +257,7 @@ private struct QuickPadCanvas: UIViewRepresentable {
         canvas.isOpaque = false
         canvas.overrideUserInterfaceStyle = .light
         canvas.isScrollEnabled = false
+        canvas.clipsToBounds = true
         canvas.drawingPolicy = .anyInput
         canvas.delegate = context.coordinator
         context.coordinator.onChange = onChange
