@@ -250,15 +250,18 @@ private struct MonthGridView: View {
     let notesByKey: [String: Note]
     @Binding var config: CanvasToolConfig
     let onExpand: (String) -> Void
+    
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var activeMagnification: CGFloat = 1.0
 
     var body: some View {
         GeometryReader { geo in
             let days = DateUtils.monthGrid(for: date)
             // Generous tiles: at least 230pt wide and ~3 rows on screen; the
             // grid scrolls in both directions when it outgrows the window.
-            let tileWidth = max(230, (geo.size.width - 24 - 6 * 8) / 7)
+            let tileWidth = max(230, (geo.size.width - 24 - 6 * 8) / 7) * zoomScale
             let gridWidth = tileWidth * 7 + 6 * 8
-            let tileHeight = max(186, (geo.size.height - 130) / 3.3)
+            let tileHeight = max(186, (geo.size.height - 130) / 3.3) * zoomScale
             let columns = Array(repeating: GridItem(.fixed(tileWidth), spacing: 8), count: 7)
 
             VStack(spacing: 0) {
@@ -272,7 +275,7 @@ private struct MonthGridView: View {
                         HStack(spacing: 8) {
                             ForEach(DateUtils.weekdays, id: \.self) { w in
                                 Text(w.uppercased())
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.system(size: max(10, 10 * zoomScale), weight: .bold))
                                     .foregroundStyle(Theme.textSecondary)
                                     .frame(width: tileWidth)
                             }
@@ -285,6 +288,7 @@ private struct MonthGridView: View {
                                     note: notesByKey[DateUtils.dateKey(day)],
                                     config: config,
                                     height: tileHeight,
+                                    scale: zoomScale,
                                     onExpand: { onExpand(DateUtils.dateKey(day)) }
                                 )
                             }
@@ -293,7 +297,18 @@ private struct MonthGridView: View {
                     .frame(width: gridWidth)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 16)
+                    .scaleEffect(activeMagnification)
                 }
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            activeMagnification = value
+                        }
+                        .onEnded { value in
+                            zoomScale = max(0.4, min(zoomScale * value, 4.0))
+                            activeMagnification = 1.0
+                        }
+                )
             }
         }
     }
@@ -305,6 +320,7 @@ private struct MonthDayTile: View {
     let note: Note?
     let config: CanvasToolConfig
     let height: CGFloat
+    var scale: CGFloat = 1.0
     let onExpand: () -> Void
 
     var body: some View {
@@ -312,13 +328,13 @@ private struct MonthDayTile: View {
             Button(action: onExpand) {
                 HStack {
                     Text("\(DateUtils.day(day))")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: max(12, 12 * scale), weight: .bold))
                         .foregroundStyle(
                             DateUtils.isToday(day)
                                 ? Theme.card
                                 : (inMonth ? Theme.navy : Theme.textSecondary.opacity(0.5))
                         )
-                        .frame(minWidth: 22, minHeight: 22)
+                        .frame(minWidth: max(22, 22 * scale), minHeight: max(22, 22 * scale))
                         .background(
                             // The delicate pink accent: today only.
                             Circle().fill(DateUtils.isToday(day) ? Theme.pink : .clear)

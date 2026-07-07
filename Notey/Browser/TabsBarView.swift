@@ -222,11 +222,15 @@ struct TabsBarView: View {
                 onPasteQuick(quickID, note.id)
                 return true
             }
-            guard item.hasPrefix("tab:"),
-                  let draggedID = UUID(uuidString: String(item.dropFirst(4))),
-                  draggedID != note.id
-            else { return false }
-            onReorder(draggedID, note.id)
+            guard let draggedID = draggedNoteID(items), draggedID != note.id else { return false }
+
+            if let targetFolder = note.folder {
+                onMoveToFolder(draggedID, targetFolder)
+            }
+            
+            if item.hasPrefix("tab:") {
+                onReorder(draggedID, note.id)
+            }
             return true
         }
     }

@@ -21,6 +21,8 @@ struct ContentView: View {
     @StateObject private var canvasProxy = CanvasProxy()
     // Freshly created note whose menu should open automatically.
     @State private var autoOpenSettingsID: UUID?
+    // Visual offset for the quick note handle when dragging it.
+    @State private var handleDragOffset: CGFloat = 0
 
     @AppStorage("notey.openTabs") private var persistedTabs = ""
     @AppStorage("notey.quick.slots") private var quickSlotsRaw = ""
@@ -255,18 +257,37 @@ struct ContentView: View {
     }
 
     private var quickNoteHandle: some View {
-        Button(action: addQuickNote) {
-            Image(systemName: "square.and.pencil")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 28, height: 88)
-                .background(
-                    UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12)
-                        .fill(.black.opacity(0.88))
-                )
-                .shadow(color: .black.opacity(0.25), radius: 6, x: -2)
-        }
-        .accessibilityLabel("Nowa szybka notatka")
+        Image(systemName: "square.and.pencil")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 28, height: 88)
+            .background(
+                UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 12)
+                    .fill(.black.opacity(0.88))
+            )
+            .shadow(color: .black.opacity(0.25), radius: 6, x: -2)
+            .contentShape(Rectangle())
+            .offset(x: handleDragOffset)
+            .onTapGesture {
+                addQuickNote()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        if value.translation.width < 0 {
+                            handleDragOffset = value.translation.width * 0.7
+                        }
+                    }
+                    .onEnded { value in
+                        if value.translation.width < -30 {
+                            addQuickNote()
+                        }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                            handleDragOffset = 0
+                        }
+                    }
+            )
+            .accessibilityLabel("Nowa szybka notatka")
     }
 
     private func addQuickNote() {
@@ -365,14 +386,7 @@ struct ContentView: View {
     }
 
     private func newNote() {
-        var folder: Folder?
-        if let note = activeNote {
-            folder = note.folder
-        } else if case .folder(let id) = route {
-            let descriptor = FetchDescriptor<Folder>(predicate: #Predicate { $0.id == id })
-            folder = try? context.fetch(descriptor).first
-        }
-        createNote(in: folder)
+        createNote(in: nil)
     }
 
     // Every fresh note opens with its menu (name, layout, background, paper).
