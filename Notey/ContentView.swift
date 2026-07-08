@@ -173,6 +173,8 @@ struct ContentView: View {
         let drag = quickDrags[slot.id] ?? .zero
         return QuickNoteCard(
             note: note,
+            isPinned: slot.pinned,
+            onTogglePin: { togglePin(slot.id) },
             onClose: { closeQuickSlot(slot.id) },
             onDragChanged: {
                 quickDrags[slot.id] = $0
@@ -190,6 +192,8 @@ struct ContentView: View {
                 }
             }
         )
+        // Pinned cards shrink around their own center, staying in place.
+        .scaleEffect(slot.pinned ? QuickNoteCard.pinnedScale : 1, anchor: .center)
         .position(x: base.x + cascade + drag.width, y: base.y + cascade + drag.height)
         .zIndex(draggingQuickID == slot.id ? 10 : Double(stackIndex))
         .transition(.scale(scale: 0.8).combined(with: .opacity))
@@ -207,6 +211,15 @@ struct ContentView: View {
             quickSlots[index].anchor = QuickNoteAnchor.nearest(
                 to: center, in: size, cardSize: QuickNoteCard.size
             )
+        }
+    }
+
+    // Pushpin tapped: shrink & pin in place, or restore. Persists via the
+    // quickSlots → AppStorage onChange, so it survives app restarts.
+    private func togglePin(_ id: UUID) {
+        guard let index = quickSlots.firstIndex(where: { $0.id == id }) else { return }
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+            quickSlots[index].pinned.toggle()
         }
     }
 

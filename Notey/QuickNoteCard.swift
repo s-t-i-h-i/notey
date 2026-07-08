@@ -39,8 +39,39 @@ struct QuickSlot: Codable, Equatable, Identifiable {
     var docked: Bool = false
     var dockTrailing: Bool = true       // which edge the tab sits on
     var dockFraction: Double = 0.3      // vertical position (0..1)
+    var pinned: Bool = false            // pushpin pressed → shrunk & pinned in place
 
     static let maxOpen = 3
+
+    private enum CodingKeys: String, CodingKey {
+        case id, anchor, docked, dockTrailing, dockFraction, pinned
+    }
+
+    init(id: UUID,
+         anchor: QuickNoteAnchor = .topTrailing,
+         docked: Bool = false,
+         dockTrailing: Bool = true,
+         dockFraction: Double = 0.3,
+         pinned: Bool = false) {
+        self.id = id
+        self.anchor = anchor
+        self.docked = docked
+        self.dockTrailing = dockTrailing
+        self.dockFraction = dockFraction
+        self.pinned = pinned
+    }
+
+    // Tolerate slots persisted before a field was added (e.g. `pinned`), so an
+    // app update never drops the user's floating quick notes.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        anchor = try c.decodeIfPresent(QuickNoteAnchor.self, forKey: .anchor) ?? .topTrailing
+        docked = try c.decodeIfPresent(Bool.self, forKey: .docked) ?? false
+        dockTrailing = try c.decodeIfPresent(Bool.self, forKey: .dockTrailing) ?? true
+        dockFraction = try c.decodeIfPresent(Double.self, forKey: .dockFraction) ?? 0.3
+        pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+    }
 
     static func decode(_ raw: String) -> [QuickSlot] {
         guard let data = raw.data(using: .utf8),
@@ -59,6 +90,8 @@ struct QuickSlot: Codable, Equatable, Identifiable {
 
 struct QuickNoteCard: View {
     let note: Note
+    var isPinned: Bool = false
+    var onTogglePin: () -> Void = {}
     let onClose: () -> Void
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: (CGSize) -> Void
@@ -69,6 +102,8 @@ struct QuickNoteCard: View {
     @State private var saveTask: Task<Void, Never>?
 
     static let size = CGSize(width: 320, height: 360)
+    // How much the card shrinks once pinned (kept large enough to stay legible).
+    static let pinnedScale: CGFloat = 0.52
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -84,26 +119,42 @@ struct QuickNoteCard: View {
                 )
             }
 
-            // Tiny tool row, tucked into the bottom corners.
-            VStack {
-                Spacer()
-                HStack(spacing: 2) {
-                    pasteHandle
+            // Tiny tool row, tucked into the bottom corners. Hidden while pinned
+            // — a pinned card is a minimized sticky; unpin it to edit.
+            if !isPinned {
+                VStack {
                     Spacer()
-                    miniTool("pencil.tip", active: !eraserActive) { eraserActive = false }
-                    miniTool("eraser", active: eraserActive) { eraserActive = true }
-                    miniTool("trash", active: false) {
-                        clearToken += 1
-                        scheduleSave(PKDrawing())
+                    HStack(spacing: 2) {
+                        pasteHandle
+                        Spacer()
+                        miniTool("pencil.tip", active: !eraserActive) { eraserActive = false }
+                        miniTool("eraser", active: eraserActive) { eraserActive = true }
+                        miniTool("trash", active: false) {
+                            clearToken += 1
+                            scheduleSave(PKDrawing())
+                        }
                     }
+                    .padding(6)
                 }
-                .padding(6)
             }
         }
         .frame(width: Self.size.width, height: Self.size.height)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.border, lineWidth: 1))
         .shadow(color: .black.opacity(0.22), radius: 16, y: 8)
+        // 3D pushpin poking above the top edge — tap to pin (shrink) / unpin.
+        .overlay(alignment: .top) {
+            Button(action: onTogglePin) {
+                Pushpin(pressed: isPinned)
+                    .frame(width: 40, height: 46)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .offset(y: -18)
+            .accessibilityLabel(isPinned
+                ? "Odepnij szybką notatkę"
+                : "Przypnij i zmniejsz szybką notatkę")
+        }
     }
 
     // MARK: Paper (ruled index card)
@@ -253,6 +304,79 @@ extension PKDrawing {
     }
 }
 
+// MARK: - 3D pushpin
+
+// A glossy thumbtack that sits on the top edge of a quick note. `pressed`
+// (= the note is pinned) sinks it into the paper; released it lifts and tilts.
+private struct Pushpin: View {
+    var pressed: Bool
+
+    private let headLight = Color(hex: 0xF29AA9)
+    private let headBase  = Color(hex: 0xD9536B)
+    private let headDark  = Color(hex: 0x9E2E45)
+
+    var body: some View {
+        VStack(spacing: -3) {
+            // Domed head with a specular highlight for volume.
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [headLight, headBase, headDark],
+                            center: UnitPoint(x: 0.34, y: 0.30),
+                            startRadius: 0.5,
+                            endRadius: 16
+                        )
+                    )
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [.clear, headDark.opacity(0.45)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                Circle().stroke(headDark.opacity(0.55), lineWidth: 0.5)
+                Ellipse()
+                    .fill(.white.opacity(0.8))
+                    .frame(width: 7, height: 5)
+                    .blur(radius: 1)
+                    .offset(x: -4, y: -5)
+            }
+            .frame(width: 22, height: 22)
+
+            // Metallic needle tapering to a point.
+            NeedleShape()
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: 0xF2F2F2), Color(hex: 0x9AA0A6), Color(hex: 0x5F646A)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: 6, height: 13)
+        }
+        .compositingGroup()
+        .shadow(color: .black.opacity(pressed ? 0.18 : 0.32),
+                radius: pressed ? 1.5 : 4,
+                x: 0, y: pressed ? 1 : 3)
+        .rotationEffect(.degrees(pressed ? 0 : -9))
+        .offset(y: pressed ? 4 : 0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pressed)
+    }
+}
+
+private struct NeedleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        p.closeSubpath()
+        return p
+    }
+}
+
 // MARK: - Bare PencilKit pad (1:1 scale, no zoom, no chrome)
 
 private struct QuickPadCanvas: UIViewRepresentable {
@@ -269,7 +393,8 @@ private struct QuickPadCanvas: UIViewRepresentable {
         canvas.overrideUserInterfaceStyle = .light
         canvas.isScrollEnabled = false
         canvas.clipsToBounds = true
-        canvas.drawingPolicy = .anyInput
+        // Pencil-only writing throughout the app.
+        canvas.drawingPolicy = .pencilOnly
         canvas.delegate = context.coordinator
         context.coordinator.onChange = onChange
         applyTool(canvas)

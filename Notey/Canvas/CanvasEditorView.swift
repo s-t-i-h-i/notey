@@ -223,16 +223,6 @@ struct CanvasEditorView: View {
     private var topCluster: some View {
         HStack(spacing: 4) {
             Button {
-                config.fingerDraws.toggle()
-            } label: {
-                Image(systemName: config.fingerDraws ? "hand.draw" : "applepencil.tip")
-                    .font(.system(size: 14, weight: .medium))
-                    .frame(width: 34, height: 34)
-                    .foregroundStyle(Theme.navySoft)
-            }
-            .help(config.fingerDraws ? "Rysuje palec i Pencil" : "Rysuje tylko Pencil")
-
-            Button {
                 isNewNote = false
                 showSettings = true
             } label: {

@@ -27,13 +27,13 @@ struct CalendarScreen: View {
     // Bumped when the enlarged day editor closes, so the live month/week
     // tiles reload the freshly saved ink (they capture the drawing once).
     @State private var tileRefresh = 0
-    // Shared ink config for month/week tiles. Finger scrolls, Pencil writes
-    // (toggleable) so the big scrolling grid stays navigable.
+    // Shared ink config for month/week tiles. Only the Pencil writes; fingers
+    // scroll the big grid, so it stays navigable.
     @State private var inkConfig = CanvasToolConfig(
         tool: .pen,
         penWidth: 3,
-        fingerDraws: false,
-        background: .blank
+        background: .blank,
+        orientation: .landscape
     )
 
     private var notesByKey: [String: Note] {
@@ -180,21 +180,8 @@ private struct CalendarToolRow: View {
                         )
                 }
             }
-            Divider().frame(height: 20)
-            Button {
-                config.fingerDraws.toggle()
-            } label: {
-                Image(systemName: config.fingerDraws ? "hand.draw" : "applepencil.tip")
-                    .font(.system(size: 14, weight: .medium))
-                    .frame(width: 34, height: 34)
-                    .foregroundStyle(Theme.navySoft)
-            }
-            .help(config.fingerDraws ? "Rysuje palec i Pencil" : "Rysuje tylko Pencil")
-
             Spacer()
-            Text(config.fingerDraws
-                 ? "Palec pisze — wyłącz, aby przewijać palcem"
-                 : "Pisz bezpośrednio po dniach (Pencil)")
+            Text("Pisz bezpośrednio po dniach (Pencil)")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.textSecondary)
         }
@@ -257,11 +244,13 @@ private struct MonthGridView: View {
     var body: some View {
         GeometryReader { geo in
             let days = DateUtils.monthGrid(for: date)
-            // Generous tiles: at least 230pt wide and ~3 rows on screen; the
-            // grid scrolls in both directions when it outgrows the window.
+            // Generous tiles: at least 230pt wide; the grid scrolls/zooms freely
+            // in both directions when it outgrows the window.
             let tileWidth = max(230, (geo.size.width - 24 - 6 * 8) / 7) * zoomScale
             let gridWidth = tileWidth * 7 + 6 * 8
-            let tileHeight = max(186, (geo.size.height - 130) / 3.3) * zoomScale
+            // The day preview keeps the exact landscape page proportions, so the
+            // tile matches the note 1:1 (CanvasPage: 1400×1000 → 1.4 aspect).
+            let canvasHeight = tileWidth * CanvasPage.size.width / CanvasPage.size.height
             let columns = Array(repeating: GridItem(.fixed(tileWidth), spacing: 8), count: 7)
 
             VStack(spacing: 0) {
@@ -287,7 +276,7 @@ private struct MonthGridView: View {
                                     inMonth: DateUtils.month(day) == DateUtils.month(date),
                                     note: notesByKey[DateUtils.dateKey(day)],
                                     config: config,
-                                    height: tileHeight,
+                                    canvasHeight: canvasHeight,
                                     scale: zoomScale,
                                     onExpand: { onExpand(DateUtils.dateKey(day)) }
                                 )
@@ -305,7 +294,8 @@ private struct MonthGridView: View {
                             activeMagnification = value
                         }
                         .onEnded { value in
-                            zoomScale = max(0.4, min(zoomScale * value, 4.0))
+                            // Wide range: zoom far out for the whole month, in to write.
+                            zoomScale = max(0.2, min(zoomScale * value, 4.0))
                             activeMagnification = 1.0
                         }
                 )
@@ -319,7 +309,7 @@ private struct MonthDayTile: View {
     let inMonth: Bool
     let note: Note?
     let config: CanvasToolConfig
-    let height: CGFloat
+    let canvasHeight: CGFloat
     var scale: CGFloat = 1.0
     let onExpand: () -> Void
 
@@ -357,9 +347,9 @@ private struct MonthDayTile: View {
                 note: note,
                 config: config
             )
+            .frame(height: canvasHeight)
             .opacity(inMonth ? 1 : 0.55)
         }
-        .frame(height: height)
         .background(
             RoundedRectangle(cornerRadius: 14)
                 .fill(inMonth ? Theme.card : Theme.bgDeep.opacity(0.5))

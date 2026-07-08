@@ -97,7 +97,6 @@ struct CanvasToolConfig: Equatable {
     var eraserMode: EraserMode = .stroke
     var eraserWidth: CGFloat = 24
     var annotationColor: UIColor = Theme.annotationColors[0]
-    var fingerDraws: Bool = true
     var background: CanvasBackground = .dots
     var paperColorHex: String?
     var layout: NoteLayout = .pages
@@ -311,7 +310,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private var isAdjustingSheet = false
     private var fitScale: CGFloat = 1
     private var didInitialLayout = false
-    private var horizontalInset: CGFloat { compact ? 6 : 16 }
+    // Compact tiles fit the whole page edge-to-edge (no inset) so the thumbnail
+    // keeps the exact page proportions.
+    private var horizontalInset: CGFloat { compact ? 0 : 16 }
 
     /// Live zoom factor (page points -> screen points).
     private var zoom: CGFloat { max(0.01, canvasView.zoomScale) }
@@ -359,9 +360,13 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         canvasView.delegate = self
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
-        canvasView.alwaysBounceVertical = true
+        canvasView.alwaysBounceVertical = !compact
         canvasView.contentInsetAdjustmentBehavior = .never
-        // Single finger / pencil draws; two fingers scroll, pinch zooms.
+        // Compact tiles never scroll: the whole page is fit into the tile, and
+        // one-finger drags belong to the surrounding month grid, not the tile.
+        canvasView.isScrollEnabled = !compact
+        // Pencil-only writing: only the Pencil draws (drawingPolicy = .pencilOnly).
+        // Two fingers scroll, pinch zooms; a single finger never marks the page.
         canvasView.panGestureRecognizer.minimumNumberOfTouches = 2
         // Trackpad / mouse wheel pans too (touch pans still need two fingers).
         canvasView.panGestureRecognizer.allowedScrollTypesMask = .all
@@ -571,9 +576,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
         canvasView.contentSize = CGSize(width: totalSize.width * zoom, height: totalSize.height * zoom)
         canvasView.contentInset = UIEdgeInsets(
-            top: compact ? 4 : 16,
+            top: compact ? 0 : 16,
             left: horizontalInset,
-            bottom: compact ? 8 : 140,
+            bottom: compact ? 0 : 140,
             right: horizontalInset
         )
         syncOverlay()
@@ -602,7 +607,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             if config.layout == .infinite {
                 centerViewportOnContent()
             } else {
-                canvasView.contentOffset = CGPoint(x: -horizontalInset, y: -(compact ? 4 : 16))
+                canvasView.contentOffset = CGPoint(x: -horizontalInset, y: -(compact ? 0 : 16))
             }
         } else if abs(newFit - fitScale) > 0.001 {
             // Rotation / split-view resize: refit, but keep a user zoom level.
@@ -659,7 +664,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
 
         updateGestureStates()
-        canvasView.drawingPolicy = config.fingerDraws ? .anyInput : .pencilOnly
+        canvasView.drawingPolicy = .pencilOnly
 
         if previousConfig.tool != config.tool, config.tool != .objects, config.tool != .annotation {
             selected = nil
@@ -1213,12 +1218,8 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         lassoErasePan.isEnabled = config.tool == .eraser && config.eraserMode == .lasso
         holdPress.isEnabled = [EditorTool.pen, .marker].contains(config.tool)
         
-        if selected != nil {
-            canvasView.drawingPolicy = .pencilOnly
-        } else {
-            canvasView.drawingPolicy = config.fingerDraws ? .anyInput : .pencilOnly
-        }
-        
+        canvasView.drawingPolicy = .pencilOnly
+
         canvasView.allowEditMenu = (config.tool == .lasso)
         
         canvasView.forceAppleTapsToWait(for: objectTap, ignoring: [objectsHost, annotationsHost])

@@ -99,6 +99,8 @@ final class Note {
         self.drawingData = Data()
         self.elementsData = Data()
         self.backgroundRaw = (kind == .calendar ? CanvasBackground.blank : .dots).rawValue
+        // Calendar notes are wide (landscape) so a day matches its month tile.
+        if kind == .calendar { self.orientationRaw = PageOrientation.landscape.rawValue }
         self.createdAt = .now
         self.updatedAt = .now
     }

@@ -22,6 +22,11 @@ enum NoteStore {
     static func calendarNote(for dateKey: String, in context: ModelContext) -> Note {
         let predicate = #Predicate<Note> { $0.dateKey == dateKey }
         if let existing = try? context.fetch(FetchDescriptor(predicate: predicate)).first {
+            // Migrate notes made before calendar pages became landscape.
+            if existing.orientation != .landscape {
+                existing.orientation = .landscape
+                try? context.save()
+            }
             return existing
         }
         let note = Note(title: dateKey, kind: .calendar, dateKey: dateKey)
