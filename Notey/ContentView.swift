@@ -166,10 +166,23 @@ struct ContentView: View {
         .animation(.spring(response: 0.34, dampingFraction: 0.88), value: quickSlots)
     }
 
+    // The card's on-screen (visual) size — pinned cards are scaled down.
+    private func effectiveCardSize(pinned: Bool) -> CGSize {
+        let s = pinned ? QuickNoteCard.pinnedScale : 1
+        return CGSize(width: QuickNoteCard.size.width * s, height: QuickNoteCard.size.height * s)
+    }
+
     private func floatingCard(_ slot: QuickSlot, note: Note, stackIndex: Int, in size: CGSize) -> some View {
-        // Cards sharing an anchor cascade slightly so all stay grabbable.
-        let base = slot.anchor.center(in: size, cardSize: QuickNoteCard.size)
-        let cascade = CGFloat(stackIndex) * 16
+        // Free position: stay exactly where dropped. Fresh cards (no stored
+        // position yet) start at their anchor and cascade so they stay grabbable.
+        let base: CGPoint
+        if let px = slot.posX, let py = slot.posY {
+            base = CGPoint(x: CGFloat(px) * size.width, y: CGFloat(py) * size.height)
+        } else {
+            let anchor = slot.anchor.center(in: size, cardSize: QuickNoteCard.size)
+            let cascade = CGFloat(stackIndex) * 16
+            base = CGPoint(x: anchor.x + cascade, y: anchor.y + cascade)
+        }
         let drag = quickDrags[slot.id] ?? .zero
         return QuickNoteCard(
             note: note,
@@ -182,36 +195,28 @@ struct ContentView: View {
             },
             onDragEnded: { translation in
                 draggingQuickID = nil
-                let center = CGPoint(
-                    x: base.x + cascade + translation.width,
-                    y: base.y + cascade + translation.height
-                )
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
-                    settleCard(slot.id, at: center, in: size)
-                    quickDrags[slot.id] = .zero
-                }
+                let center = CGPoint(x: base.x + translation.width, y: base.y + translation.height)
+                settleCard(slot.id, at: center, in: size)
+                quickDrags[slot.id] = .zero
             }
         )
         // Pinned cards shrink around their own center, staying in place.
         .scaleEffect(slot.pinned ? QuickNoteCard.pinnedScale : 1, anchor: .center)
-        .position(x: base.x + cascade + drag.width, y: base.y + cascade + drag.height)
+        .position(x: base.x + drag.width, y: base.y + drag.height)
         .zIndex(draggingQuickID == slot.id ? 10 : Double(stackIndex))
         .transition(.scale(scale: 0.8).combined(with: .opacity))
     }
 
-    /// Thrown past a side edge → dock as a small tab there; otherwise snap to
-    /// the nearest anchor.
+    /// Drop the card wherever it was left — no snapping, no edge magnetism.
+    /// Only clamp (by the card's *visual* size) so it stays fully on screen and
+    /// can sit flush against any edge, even when pinned/shrunk.
     private func settleCard(_ id: UUID, at center: CGPoint, in size: CGSize) {
         guard let index = quickSlots.firstIndex(where: { $0.id == id }) else { return }
-        if center.x > size.width - 60 || center.x < 60 {
-            quickSlots[index].docked = true
-            quickSlots[index].dockTrailing = center.x > size.width / 2
-            quickSlots[index].dockFraction = min(0.9, max(0.08, center.y / max(1, size.height)))
-        } else {
-            quickSlots[index].anchor = QuickNoteAnchor.nearest(
-                to: center, in: size, cardSize: QuickNoteCard.size
-            )
-        }
+        let eff = effectiveCardSize(pinned: quickSlots[index].pinned)
+        let cx = max(eff.width / 2, min(center.x, size.width - eff.width / 2))
+        let cy = max(eff.height / 2, min(center.y, size.height - eff.height / 2))
+        quickSlots[index].posX = Double(cx / max(1, size.width))
+        quickSlots[index].posY = Double(cy / max(1, size.height))
     }
 
     // Pushpin tapped: shrink & pin in place, or restore. Persists via the

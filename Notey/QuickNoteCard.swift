@@ -35,16 +35,20 @@ enum QuickNoteAnchor: String, CaseIterable, Codable {
 // "thrown off screen" — a small tab docked to the left/right edge.
 struct QuickSlot: Codable, Equatable, Identifiable {
     var id: UUID                 // the quick note's id
-    var anchor: QuickNoteAnchor = .topTrailing
+    var anchor: QuickNoteAnchor = .topTrailing   // initial spot before first drag
     var docked: Bool = false
     var dockTrailing: Bool = true       // which edge the tab sits on
     var dockFraction: Double = 0.3      // vertical position (0..1)
     var pinned: Bool = false            // pushpin pressed → shrunk & pinned in place
+    // Free position of the card CENTER as a fraction of the container (0..1).
+    // nil until first drag, then the card stays exactly where dropped.
+    var posX: Double?
+    var posY: Double?
 
     static let maxOpen = 3
 
     private enum CodingKeys: String, CodingKey {
-        case id, anchor, docked, dockTrailing, dockFraction, pinned
+        case id, anchor, docked, dockTrailing, dockFraction, pinned, posX, posY
     }
 
     init(id: UUID,
@@ -52,17 +56,21 @@ struct QuickSlot: Codable, Equatable, Identifiable {
          docked: Bool = false,
          dockTrailing: Bool = true,
          dockFraction: Double = 0.3,
-         pinned: Bool = false) {
+         pinned: Bool = false,
+         posX: Double? = nil,
+         posY: Double? = nil) {
         self.id = id
         self.anchor = anchor
         self.docked = docked
         self.dockTrailing = dockTrailing
         self.dockFraction = dockFraction
         self.pinned = pinned
+        self.posX = posX
+        self.posY = posY
     }
 
-    // Tolerate slots persisted before a field was added (e.g. `pinned`), so an
-    // app update never drops the user's floating quick notes.
+    // Tolerate slots persisted before a field was added (e.g. `pinned`, `posX`),
+    // so an app update never drops the user's floating quick notes.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -71,6 +79,8 @@ struct QuickSlot: Codable, Equatable, Identifiable {
         dockTrailing = try c.decodeIfPresent(Bool.self, forKey: .dockTrailing) ?? true
         dockFraction = try c.decodeIfPresent(Double.self, forKey: .dockFraction) ?? 0.3
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        posX = try c.decodeIfPresent(Double.self, forKey: .posX)
+        posY = try c.decodeIfPresent(Double.self, forKey: .posY)
     }
 
     static func decode(_ raw: String) -> [QuickSlot] {
