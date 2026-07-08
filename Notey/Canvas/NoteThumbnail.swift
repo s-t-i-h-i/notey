@@ -51,7 +51,6 @@ enum NoteThumbnail {
             var union: CGRect = .null
             if !drawing.strokes.isEmpty { union = union.union(drawing.bounds) }
             for i in elements.images { union = union.union(i.frame) }
-            for a in elements.annotations { union = union.union(a.frame) }
             if !union.isNull {
                 region = union.insetBy(dx: -40, dy: -40)
             }
@@ -80,16 +79,11 @@ enum NoteThumbnail {
                 )
             }
 
-            // Canvas z-order: photos, annotation cards, then all ink on top.
+            // Canvas z-order: photos, then all ink on top.
             for element in elements.images {
                 if let uiImage = UIImage(data: element.imageData) {
                     uiImage.draw(in: element.frame)
                 }
-            }
-            for annotation in elements.annotations {
-                let card = UIBezierPath(roundedRect: annotation.frame, cornerRadius: 12)
-                UIColor(hexString: annotation.colorHex).setFill()
-                card.fill()
             }
             if !drawing.strokes.isEmpty {
                 let inkRegion = fit == .content ? region : page

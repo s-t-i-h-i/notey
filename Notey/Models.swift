@@ -138,7 +138,7 @@ final class Note {
     }
 
     var isEmpty: Bool {
-        drawing.strokes.isEmpty && elements.images.isEmpty && elements.annotations.isEmpty
+        drawing.strokes.isEmpty && elements.images.isEmpty
     }
 }
 
@@ -146,7 +146,6 @@ final class Note {
 
 struct CanvasElements: Codable, Equatable {
     var images: [ImageElement] = []
-    var annotations: [AnnotationElement] = []
     // Stacked pages of the note (nil = 1). Extra pages are added with the
     // "+" button in calendar notes.
     var pages: Int?
@@ -159,28 +158,6 @@ struct ImageElement: Codable, Equatable, Identifiable {
     var w: Double
     var h: Double
     var imageData: Data
-
-    var frame: CGRect {
-        get { CGRect(x: x, y: y, width: w, height: h) }
-        set { x = newValue.origin.x; y = newValue.origin.y; w = newValue.width; h = newValue.height }
-    }
-}
-
-struct AnnotationElement: Codable, Equatable, Identifiable {
-    var id: UUID = UUID()
-    var x: Double
-    var y: Double
-    var w: Double
-    var h: Double
-    var colorHex: String
-    // Legacy field kept only so old notes still decode.
-    var createdAt: Double?
-    // Fingerprints (randomSeed-pointCount) of strokes written on top of this
-    // annotation. This is the ONLY attachment rule: a stroke belongs to the
-    // annotation iff it first appeared on it. Fingerprints survive the
-    // PKDrawing serialization round-trip, so text still travels with the
-    // annotation after the note is closed and reopened.
-    var strokeKeys: [String]?
 
     var frame: CGRect {
         get { CGRect(x: x, y: y, width: w, height: h) }
@@ -215,10 +192,4 @@ enum CanvasPage {
         let n = CGFloat(max(1, pages))
         return CGSize(width: s.width, height: s.height * n + gap * (n - 1))
     }
-}
-
-extension PKStroke {
-    /// Stable stroke identity that survives PKDrawing (de)serialization —
-    /// used to remember which strokes were written on an annotation.
-    var fingerprint: String { "\(randomSeed)-\(path.count)" }
 }

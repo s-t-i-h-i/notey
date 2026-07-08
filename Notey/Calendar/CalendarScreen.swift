@@ -30,10 +30,10 @@ struct CalendarScreen: View {
     // Shared ink config for month/week tiles. Only the Pencil writes; fingers
     // scroll the big grid, so it stays navigable.
     @State private var inkConfig = CanvasToolConfig(
-        tool: .pen,
-        penWidth: 3,
         background: .blank,
-        orientation: .landscape
+        orientation: .landscape,
+        compactTool: .pen,
+        inkWidth: 3
     )
 
     private var notesByKey: [String: Note] {
@@ -147,35 +147,34 @@ private struct CalendarToolRow: View {
     var body: some View {
         HStack(spacing: 10) {
             ForEach(
-                [(EditorTool.pen, "pencil.tip"), (.marker, "highlighter"), (.eraser, "eraser")],
+                [(CompactTool.pen, "pencil.tip"), (.marker, "highlighter"), (.eraser, "eraser")],
                 id: \.0
             ) { tool, icon in
                 Button {
-                    config.tool = tool
+                    config.compactTool = tool
                 } label: {
                     Image(systemName: icon)
                         .font(.system(size: 14, weight: .medium))
                         .frame(width: 34, height: 34)
-                        .foregroundStyle(config.tool == tool ? Theme.pink : Theme.navySoft)
+                        .foregroundStyle(config.compactTool == tool ? Theme.pink : Theme.navySoft)
                         .background(
                             RoundedRectangle(cornerRadius: 10)
-                                .fill(config.tool == tool ? Theme.pinkSoft : .clear)
+                                .fill(config.compactTool == tool ? Theme.pinkSoft : .clear)
                         )
                 }
             }
             Divider().frame(height: 20)
             ForEach(Array(Theme.inkColors.enumerated()), id: \.offset) { _, color in
                 Button {
-                    config.penColor = color
-                    config.markerColor = color.withAlphaComponent(1)
+                    config.inkColor = color
                 } label: {
                     Circle()
                         .fill(Color(uiColor: color))
                         .frame(width: 20, height: 20)
                         .overlay(
                             Circle().stroke(
-                                config.penColor == color ? Theme.navy : Theme.border,
-                                lineWidth: config.penColor == color ? 2 : 1
+                                config.inkColor == color ? Theme.navy : Theme.border,
+                                lineWidth: config.inkColor == color ? 2 : 1
                             )
                         )
                 }

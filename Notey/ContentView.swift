@@ -351,7 +351,6 @@ struct ContentView: View {
         let targetDrawing = target.drawing
         if !targetDrawing.strokes.isEmpty { union = union.union(targetDrawing.bounds) }
         for image in target.elements.images { union = union.union(image.frame) }
-        for annotation in target.elements.annotations { union = union.union(annotation.frame) }
         let origin = union.isNull ? CGPoint(x: 80, y: 80) : CGPoint(x: 80, y: union.maxY + 40)
 
         let bounds = quickDrawing.bounds

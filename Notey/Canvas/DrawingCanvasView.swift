@@ -4,99 +4,25 @@ import PencilKit
 
 // MARK: - Tool model
 
-enum EditorTool: String, Equatable {
-    case pen, marker, eraser, lasso, objects, annotation
-}
-
-enum PenStyle: String, Equatable, CaseIterable, Identifiable {
-    case ballpoint, fountain, pencil, monoline, crayon
+// Minimal ink tool for the compact calendar tiles, which have no PKToolPicker
+// (42 live canvases would share one floating picker — pointless). The full
+// editor gets the native picker instead and ignores these fields.
+enum CompactTool: String, Equatable, CaseIterable, Identifiable {
+    case pen, marker, eraser
 
     var id: String { rawValue }
-
-    var inkType: PKInkingTool.InkType {
-        switch self {
-        case .ballpoint: return .pen
-        case .fountain: return .fountainPen
-        case .pencil: return .pencil
-        case .monoline: return .monoline
-        case .crayon: return .crayon
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .ballpoint: return "Długopis"
-        case .fountain: return "Pióro"
-        case .pencil: return "Ołówek"
-        case .monoline: return "Cienkopis"
-        case .crayon: return "Kredka"
-        }
-    }
 
     var icon: String {
         switch self {
-        case .ballpoint: return "pencil.tip"
-        case .fountain: return "paintbrush.pointed.fill"
-        case .pencil: return "pencil"
-        case .monoline: return "scribble"
-        case .crayon: return "paintbrush.fill"
-        }
-    }
-}
-
-enum MarkerStyle: String, Equatable, CaseIterable, Identifiable {
-    case classic, watercolor
-
-    var id: String { rawValue }
-
-    var inkType: PKInkingTool.InkType {
-        switch self {
-        case .classic: return .marker
-        case .watercolor: return .watercolor
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .classic: return "Zakreślacz"
-        case .watercolor: return "Akwarela"
-        }
-    }
-}
-
-enum EraserMode: String, Equatable, CaseIterable, Identifiable {
-    case stroke, point, lasso
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .stroke: return "Cała kreska"
-        case .point: return "Punktowa"
-        case .lasso: return "Lasso"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .stroke: return "eraser"
-        case .point: return "eraser.line.dashed"
-        case .lasso: return "lasso"
+        case .pen: return "pencil.tip"
+        case .marker: return "highlighter"
+        case .eraser: return "eraser"
         }
     }
 }
 
 struct CanvasToolConfig: Equatable {
-    var tool: EditorTool = .pen
-    var penStyle: PenStyle = .ballpoint
-    var penColor: UIColor = Theme.inkColors[0]
-    var penWidth: CGFloat = 4
-    var markerStyle: MarkerStyle = .classic
-    var markerColor: UIColor = Theme.markerColors[0]
-    var markerWidth: CGFloat = 16
-    var eraserMode: EraserMode = .stroke
-    var eraserWidth: CGFloat = 24
-    var annotationColor: UIColor = Theme.annotationColors[0]
+    // Page appearance — used by every canvas (editor, calendar, thumbnails).
     var background: CanvasBackground = .dots
     var paperColorHex: String?
     var layout: NoteLayout = .pages
@@ -106,11 +32,16 @@ struct CanvasToolConfig: Equatable {
     // image itself is delivered separately (DrawingCanvas.customTemplateImage)
     // so it stays out of the per-update Equatable comparison.
     var customTemplateKey: String?
+
+    // Compact ink — used ONLY by compact calendar tiles (no tool picker there).
+    // The full editor owns its tool through the native PKToolPicker.
+    var compactTool: CompactTool = .pen
+    var inkColor: UIColor = Theme.inkColors[0]
+    var inkWidth: CGFloat = 3
 }
 
 enum SelectedElement: Equatable {
     case image(UUID)
-    case annotation(UUID)
 }
 
 // MARK: - Proxy (SwiftUI -> UIKit commands)
@@ -139,6 +70,11 @@ struct DrawingCanvas: UIViewRepresentable {
     let initialElements: CanvasElements
     var config: CanvasToolConfig
     var compact: Bool = false
+    // Show the native floating PencilKit toolbar (PKToolPicker). Off for the
+    // compact calendar tiles; on for the full editor and the day editor.
+    var showsToolPicker: Bool = false
+    // Auto-straighten hand-drawn shapes ("draw and hold" → ideal shape).
+    var shapeDetection: Bool = true
     // Decoded custom template image (kept out of `config` so its bytes don't
     // enter the per-update Equatable check — change is tracked via config.customTemplateKey).
     var customTemplateImage: UIImage? = nil
@@ -155,7 +91,9 @@ struct DrawingCanvas: UIViewRepresentable {
         container.onChange = onChange
         container.onSelection = onSelection
         container.customTemplateImage = customTemplateImage
+        container.shapeDetectionEnabled = shapeDetection
         container.apply(config: config)
+        container.setToolPickerVisible(showsToolPicker)
         proxy.container = container
         return container
     }
@@ -164,83 +102,28 @@ struct DrawingCanvas: UIViewRepresentable {
         container.onChange = onChange
         container.onSelection = onSelection
         container.customTemplateImage = customTemplateImage
+        container.shapeDetectionEnabled = shapeDetection
         container.apply(config: config)
+        container.setToolPickerVisible(showsToolPicker)
         proxy.container = container
     }
 }
 
-// MARK: - Annotation card (rendered BELOW the ink)
-
-// A colored highlight patch sitting under the handwriting. The ink image is
-// only used while the card is dragged: its attached strokes are lifted off
-// the canvas and baked onto the card so they cannot lag behind the drag.
-private final class AnnotationCardView: UIView {
-    private let content = UIView()
-    private let inkView = UIImageView()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isUserInteractionEnabled = false
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.12
-        layer.shadowRadius = 5
-        layer.shadowOffset = CGSize(width: 0, height: 2)
-
-        content.frame = bounds
-        content.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        content.clipsToBounds = true
-        addSubview(content)
-
-        inkView.frame = bounds
-        inkView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        inkView.contentMode = .scaleToFill
-        content.addSubview(inkView)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    func configure(color: UIColor) {
-        content.backgroundColor = color
-    }
-
-    func setInk(_ image: UIImage?) {
-        inkView.image = image
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        let radius = min(14, bounds.width / 4, bounds.height / 4)
-        content.layer.cornerRadius = radius
-        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: radius).cgPath
-    }
-}
-
-// Overlay layers (lasso-eraser trail, annotation draft, selection outline)
-// are standalone CAShapeLayers without a backing view, so every property
-// change would get the implicit 0.25s CATransaction animation — the shape
-// visibly trails behind the finger. No actions = the overlay tracks 1:1.
+// The selection outline is a standalone CAShapeLayer without a backing view,
+// so every property change would get the implicit 0.25s CATransaction
+// animation — the outline visibly trails behind the finger. No actions = it
+// tracks 1:1.
 private final class ImmediateShapeLayer: CAShapeLayer {
     override func action(forKey event: String) -> CAAction? { nil }
 }
 
-// MARK: - Container view (pages + pattern + objects + annotations + PencilKit ink)
+// MARK: - Container view (pages + pattern + photos + PencilKit ink)
 
 // Z-order, bottom to top:
 //   1. page cards + background pattern
 //   2. photos
-//   3. annotation cards (highlight patches under the writing)
-//   4. handwriting (PencilKit) — always fully visible, wet strokes included
-//   5. selection outline / draft shapes (overlayHost)
-
-final class ImmediatePanGestureRecognizer: UIPanGestureRecognizer {
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
-        super.touchesBegan(touches, with: event)
-        if state == .possible {
-            state = .began
-        }
-    }
-}
+//   3. handwriting (PencilKit)
+//   4. selection outline (overlayHost, photos only)
 
 final class NoteyCanvasView: PKCanvasView {
     var allowEditMenu: Bool = true
@@ -261,8 +144,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     let canvasView = NoteyCanvasView()
     private let objectsHost = UIView()      // below the ink: pages + photos
-    private let annotationsHost = UIView()  // below the ink too: annotation cards
-    private let overlayHost = UIView()      // above the ink: selection + drafts
+    private let overlayHost = UIView()      // above the ink: selection outline
     private let pagesHost = UIView()
     private var pageCards: [UIView] = []
     private var patternLayers: [CAShapeLayer] = []
@@ -270,12 +152,10 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     // Delivered by DrawingCanvas; used to render the .custom page template.
     var customTemplateImage: UIImage?
     private let selectionLayer = ImmediateShapeLayer()
-    private let draftLayer = ImmediateShapeLayer()
 
     private(set) var elements: CanvasElements
     private var config = CanvasToolConfig()
     private var imageViews: [UUID: UIView] = [:]
-    private var annotationViews: [UUID: AnnotationCardView] = [:]
     private let compact: Bool
 
     var onChange: ((PKDrawing, CanvasElements) -> Void)?
@@ -317,30 +197,31 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     /// Live zoom factor (page points -> screen points).
     private var zoom: CGFloat { max(0.01, canvasView.zoomScale) }
 
-    // Gesture state
+    // Photo manipulation gestures — finger-only, so the Pencil always draws
+    // (write on top of a photo) while a finger tap/drag selects and moves it.
     private var objectPan: UIPanGestureRecognizer!
     private var objectTap: UITapGestureRecognizer!
-    private var annotationPan: ImmediatePanGestureRecognizer!
-    private var lassoErasePan: ImmediatePanGestureRecognizer!
     private var holdPress: UILongPressGestureRecognizer!
     private var dragOriginalFrame: CGRect = .zero
     private var dragBaseDrawing = PKDrawing()
     private var dragBaseElements = CanvasElements()
-    private var dragAttachedStrokes: [Int] = []
     private var dragIsResize = false
     private var dragActive = false
-    // While an annotation is dragged its attached strokes are removed from
-    // the PKCanvasView (the card image carries them), so the real ink can't
-    // lag behind the card as a "ghost". They're re-inserted on release.
-    private var dragStrokesHidden = false
-    private var annotationStart: CGPoint = .zero
-    private var annotationDrafting = false
-    private var lassoErasePoints: [CGPoint] = []
     private var holdStartLocation: CGPoint = .zero
 
-    // Stroke identity tracking: a stroke seen for the first time on top of an
-    // annotation gets attached to it (and only then).
-    private var knownStrokeKeys: Set<String> = []
+    // Native floating toolbar (Apple Notes-style). Created lazily; shown only
+    // for the full editor and the day editor — never the compact tiles.
+    private lazy var toolPicker = PKToolPicker()
+    private var toolPickerVisible = false
+
+    // Shape straightening ("draw and hold" → ideal shape); full editor only.
+    private var shapeSnapper: ShapeSnapper?
+    var shapeDetectionEnabled = true {
+        didSet { shapeSnapper?.isEnabled = shapeDetectionEnabled && !compact }
+    }
+    // Stroke count when the current tool interaction began — tells a fresh ink
+    // stroke (a snap candidate) apart from an erase or a lasso move.
+    private var strokeCountAtToolBegin = 0
 
     var undoManagerForCanvas: UndoManager? { canvasView.undoManager ?? undoManager }
 
@@ -356,7 +237,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         overrideUserInterfaceStyle = .light
 
         canvasView.drawing = drawing
-        knownStrokeKeys = Set(drawing.strokes.map(\.fingerprint))
         canvasView.delegate = self
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
@@ -379,11 +259,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         pagesHost.frame = CGRect(origin: .zero, size: totalSize)
         objectsHost.addSubview(pagesHost)
 
-        annotationsHost.frame = CGRect(origin: .zero, size: totalSize)
-        annotationsHost.layer.anchorPoint = .zero
-        annotationsHost.layer.position = .zero
-        annotationsHost.isUserInteractionEnabled = false
-
         overlayHost.frame = CGRect(origin: .zero, size: totalSize)
         overlayHost.layer.anchorPoint = .zero
         overlayHost.layer.position = .zero
@@ -394,73 +269,86 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         selectionLayer.lineWidth = 1.5
         selectionLayer.lineDashPattern = [6, 4]
 
-        draftLayer.fillColor = nil
-
         overlayHost.layer.addSublayer(selectionLayer)
-        overlayHost.layer.addSublayer(draftLayer)
 
-        // Both hosts stay under PencilKit's own rendering; only overlayHost
+        // objectsHost stays under PencilKit's own rendering; overlayHost
         // (added last) sits above the ink.
         canvasView.insertSubview(objectsHost, at: 0)
-        canvasView.insertSubview(annotationsHost, aboveSubview: objectsHost)
         canvasView.addSubview(overlayHost)
 
-        // Object mode gestures
+        // Photo gestures — all finger-only (the Pencil is reserved for ink and
+        // shape-holding). They select / move / resize photos and coexist with
+        // PencilKit's own drawing and two-finger scroll.
+        let fingerOnly = [NSNumber(value: UITouch.TouchType.direct.rawValue)]
+
         objectTap = UITapGestureRecognizer(target: self, action: #selector(handleObjectTap(_:)))
         objectTap.delegate = self
-        objectTap.isEnabled = false
+        objectTap.allowedTouchTypes = fingerOnly
         canvasView.addGestureRecognizer(objectTap)
 
         objectPan = UIPanGestureRecognizer(target: self, action: #selector(handleObjectPan(_:)))
+        objectPan.delegate = self
         objectPan.maximumNumberOfTouches = 1
-        objectPan.isEnabled = false
+        objectPan.allowedTouchTypes = fingerOnly
         canvasView.addGestureRecognizer(objectPan)
 
-        annotationPan = ImmediatePanGestureRecognizer(target: self, action: #selector(handleAnnotationPan(_:)))
-        annotationPan.maximumNumberOfTouches = 1
-        annotationPan.isEnabled = false
-        canvasView.addGestureRecognizer(annotationPan)
-
-        // Freeform eraser: circle strokes to delete them.
-        lassoErasePan = ImmediatePanGestureRecognizer(target: self, action: #selector(handleLassoErase(_:)))
-        lassoErasePan.maximumNumberOfTouches = 1
-        lassoErasePan.isEnabled = false
-        canvasView.addGestureRecognizer(lassoErasePan)
-
-        // Hold & drag: select an annotation (with its own writing) or a photo
-        // and move it, even while an ink tool is active.
+        // Hold & drag a photo (finger), even while an ink tool is active.
         holdPress = UILongPressGestureRecognizer(target: self, action: #selector(handleHoldPress(_:)))
         holdPress.minimumPressDuration = 0.4
         holdPress.delegate = self
-        holdPress.isEnabled = false
+        holdPress.allowedTouchTypes = fingerOnly
         canvasView.addGestureRecognizer(holdPress)
+
+        // Shape straightening rides on top of PencilKit (Pencil-only); compact
+        // tiles never snap.
+        if !compact {
+            let snapper = ShapeSnapper(canvasView: canvasView)
+            snapper.isEnabled = shapeDetectionEnabled
+            snapper.onSnap = { [weak self] before in
+                guard let self else { return }
+                self.commitElementChange(from: self.elements, fromDrawing: before)
+                self.ensureRunwayForContent()
+            }
+            shapeSnapper = snapper
+        }
 
         rebuildPages()
         rebuildElementViews()
-
-        // TEMP DEBUG: triple-tap teleports the viewport 40k pt toward the
-        // top-left corner to torture-test infinite growth. REMOVE.
-        let debugJump = UITapGestureRecognizer(target: self, action: #selector(debugJumpTowardOrigin))
-        debugJump.numberOfTapsRequired = 3
-        canvasView.addGestureRecognizer(debugJump)
-    }
-
-    // TEMP DEBUG — REMOVE.
-    @objc private func debugJumpTowardOrigin() {
-        guard config.layout == .infinite else { return }
-        NSLog("[notey-dbg] jump: offset=%@ sheet=%@", NSCoder.string(for: canvasView.contentOffset), NSCoder.string(for: infiniteSheet))
-        canvasView.setContentOffset(
-            CGPoint(
-                x: canvasView.contentOffset.x - 40_000 * zoom,
-                y: canvasView.contentOffset.y - 40_000 * zoom
-            ),
-            animated: false
-        )
-        NSLog("[notey-dbg] after: offset=%@ sheet=%@", NSCoder.string(for: canvasView.contentOffset), NSCoder.string(for: infiniteSheet))
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    // MARK: Native tool picker (PKToolPicker — the Apple Notes floating toolbar)
+
+    /// Show/hide the shared floating PencilKit toolbar for this canvas. The
+    /// picker only appears once the canvas is in a window and first responder.
+    func setToolPickerVisible(_ visible: Bool) {
+        guard visible != toolPickerVisible else { return }
+        toolPickerVisible = visible
+        applyToolPickerVisibility()
+    }
+
+    private func applyToolPickerVisibility() {
+        guard !compact, window != nil else { return }
+        if toolPickerVisible {
+            // Adding the canvas as an observer wires its active `tool` to the
+            // picker's selection automatically (native behavior).
+            toolPicker.addObserver(canvasView)
+            toolPicker.setVisible(true, forFirstResponder: canvasView)
+            canvasView.becomeFirstResponder()
+        } else {
+            toolPicker.setVisible(false, forFirstResponder: canvasView)
+            toolPicker.removeObserver(canvasView)
+            canvasView.resignFirstResponder()
+        }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        // First responder + picker can only attach once we're in a window.
+        if window != nil { applyToolPickerVisibility() }
+    }
 
     // MARK: Pages
 
@@ -588,7 +476,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let z = zoom
         let transform = CGAffineTransform(scaleX: z, y: z)
         objectsHost.transform = transform
-        annotationsHost.transform = transform
         overlayHost.transform = transform
         // Overlay lines live in page space (they scale with the zoom); keep
         // them visually constant.
@@ -646,29 +533,22 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let previousConfig = self.config
         self.config = config
 
-        switch config.tool {
-        case .pen:
-            canvasView.tool = PKInkingTool(config.penStyle.inkType, color: config.penColor, width: config.penWidth)
-        case .marker:
-            canvasView.tool = PKInkingTool(config.markerStyle.inkType, color: config.markerColor, width: config.markerWidth)
-        case .eraser:
-            switch config.eraserMode {
-            case .stroke: canvasView.tool = PKEraserTool(.vector)
-            case .point: canvasView.tool = PKEraserTool(.bitmap, width: config.eraserWidth)
-            case .lasso: break
+        // Compact tiles have no PKToolPicker, so they set their ink here from
+        // the shared config. The full editor's tool is owned by the picker.
+        if compact {
+            switch config.compactTool {
+            case .pen:
+                canvasView.tool = PKInkingTool(.pen, color: config.inkColor, width: config.inkWidth)
+            case .marker:
+                canvasView.tool = PKInkingTool(.marker, color: config.inkColor, width: config.inkWidth * 5)
+            case .eraser:
+                canvasView.tool = PKEraserTool(.vector)
             }
-        case .lasso:
-            canvasView.tool = PKLassoTool()
-        case .objects, .annotation:
-            break
         }
 
         updateGestureStates()
         canvasView.drawingPolicy = .pencilOnly
 
-        if previousConfig.tool != config.tool, config.tool != .objects, config.tool != .annotation {
-            selected = nil
-        }
         if previousConfig.layout != config.layout {
             // Keep the ink where the layout expects it: centered on a freshly
             // sized sheet (infinite) or tucked into the top-left page (pages).
@@ -713,7 +593,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         var union: CGRect = .null
         if !canvasView.drawing.strokes.isEmpty { union = union.union(canvasView.drawing.bounds) }
         for image in elements.images { union = union.union(image.frame) }
-        for annotation in elements.annotations { union = union.union(annotation.frame) }
         return union
     }
 
@@ -781,10 +660,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             elements.images[i].frame = elements.images[i].frame.offsetBy(dx: dx, dy: dy)
             imageViews[elements.images[i].id]?.frame = elements.images[i].frame
         }
-        for i in elements.annotations.indices {
-            elements.annotations[i].frame = elements.annotations[i].frame.offsetBy(dx: dx, dy: dy)
-            annotationViews[elements.annotations[i].id]?.frame = elements.annotations[i].frame
-        }
         canvasView.drawing = canvasView.drawing.transformed(using: CGAffineTransform(translationX: dx, y: dy))
         refreshSelectionLayer()
     }
@@ -817,7 +692,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         // A coordinate shift under a wet stroke or an active drag would tear
         // it — grow the cheap sides now, retry the shift when the gesture ends.
         if dx > 0 || dy > 0,
-           toolInUse || dragActive || annotationDrafting || !lassoErasePoints.isEmpty {
+           toolInUse || dragActive {
             pendingEdgeShift = true
             dx = 0
             dy = 0
@@ -989,8 +864,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private func rebuildElementViews() {
         for (_, v) in imageViews { v.removeFromSuperview() }
         imageViews.removeAll()
-        for (_, v) in annotationViews { v.removeFromSuperview() }
-        annotationViews.removeAll()
 
         for image in elements.images {
             let v = UIImageView(frame: image.frame)
@@ -1001,12 +874,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             objectsHost.addSubview(v)
             imageViews[image.id] = v
         }
-        for annotation in elements.annotations {
-            let card = AnnotationCardView(frame: annotation.frame)
-            card.configure(color: UIColor(hexString: annotation.colorHex))
-            annotationsHost.addSubview(card)
-            annotationViews[annotation.id] = card
-        }
         refreshSelectionLayer()
     }
 
@@ -1016,33 +883,22 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             return
         }
         let path = UIBezierPath(roundedRect: frame.insetBy(dx: -6, dy: -6), cornerRadius: 10)
-        if case .image = selected {
-            // Resize handle (bottom-right)
-            path.append(UIBezierPath(ovalIn: CGRect(x: frame.maxX - 9, y: frame.maxY - 9, width: 18, height: 18)))
-        }
+        // Resize handle (bottom-right).
+        path.append(UIBezierPath(ovalIn: CGRect(x: frame.maxX - 9, y: frame.maxY - 9, width: 18, height: 18)))
         selectionLayer.path = path.cgPath
     }
 
     private func frameOf(_ element: SelectedElement) -> CGRect? {
         switch element {
         case .image(let id): return elements.images.first { $0.id == id }?.frame
-        case .annotation(let id): return elements.annotations.first { $0.id == id }?.frame
         }
     }
 
-    // Annotations sit on top, so they win the hit-test over photos.
     private func elementAt(_ point: CGPoint) -> SelectedElement? {
-        if let annotation = annotationAt(point) {
-            return .annotation(annotation.id)
-        }
         for image in elements.images.reversed() where image.frame.contains(point) {
             return .image(image.id)
         }
         return nil
-    }
-
-    private func annotationAt(_ point: CGPoint) -> AnnotationElement? {
-        elements.annotations.reversed().first { $0.frame.contains(point) }
     }
 
     private func pagePoint(from gesture: UIGestureRecognizer) -> CGPoint {
@@ -1060,196 +916,78 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         return CGPoint(x: (loc.x - t.x) / zoom, y: (loc.y - t.y) / zoom)
     }
 
-    // MARK: Annotation ink (attached strokes rendered on the card)
-
-    /// Any stroke that appears for the first time while sitting on top of an
-    /// annotation gets fingerprinted into that annotation — and only such
-    /// strokes ever belong to it. Sliding the annotation over old writing or
-    /// lassoing foreign text onto it never captures anything.
-    private func trackNewStrokes(in drawing: PKDrawing) {
-        var currentKeys = Set<String>()
-        currentKeys.reserveCapacity(drawing.strokes.count)
-        for stroke in drawing.strokes {
-            let key = stroke.fingerprint
-            currentKeys.insert(key)
-            guard !knownStrokeKeys.contains(key), !elements.annotations.isEmpty else { continue }
-            let center = CGPoint(x: stroke.renderBounds.midX, y: stroke.renderBounds.midY)
-            // Topmost annotation under the fresh stroke wins.
-            if let idx = elements.annotations.lastIndex(where: { $0.frame.contains(center) }) {
-                var keys = elements.annotations[idx].strokeKeys ?? []
-                if !keys.contains(key) {
-                    keys.append(key)
-                    elements.annotations[idx].strokeKeys = keys
-                }
-            }
-        }
-        knownStrokeKeys = currentKeys
-    }
-
-    /// Strokes attached to an annotation — strictly by fingerprint. Strokes
-    /// that were meanwhile moved far away (e.g. with the lasso) are released.
-    private func attachedStrokeIndexes(for annotation: AnnotationElement, of drawing: PKDrawing) -> [Int] {
-        let keys = Set(annotation.strokeKeys ?? [])
-        guard !keys.isEmpty else { return [] }
-        let near = annotation.frame.insetBy(dx: -80, dy: -80)
-        return drawing.strokes.enumerated().compactMap { index, stroke in
-            keys.contains(stroke.fingerprint) && stroke.renderBounds.intersects(near) ? index : nil
-        }
-    }
-
-    // The cards live under the ink, so writing (wet strokes included) is
-    // always fully visible — no layer juggling while the tool is in use.
+    // The Pencil started a stroke: remember the stroke count so we can tell a
+    // fresh ink stroke (a shape-snap candidate) from an erase when it ends.
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = true
+        strokeCountAtToolBegin = canvasView.drawing.strokes.count
     }
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = false
+        // Straighten the just-finished stroke if the Pencil was held still at
+        // its end and exactly one ink stroke was added (not an erase/lasso).
+        if canvasView.tool is PKInkingTool,
+           canvasView.drawing.strokes.count == strokeCountAtToolBegin + 1 {
+            shapeSnapper?.inkStrokeDidEnd()
+        }
         retryPendingEdgeShift()
         ensureRunwayForContent()
     }
 
-    // MARK: Shared drag machinery
+    // MARK: Photo drag machinery
 
     private func beginDrag(of element: SelectedElement, resize: Bool) {
         guard let frame = frameOf(element) else { return }
         selected = element
         dragIsResize = resize
         dragActive = true
-        dragStrokesHidden = false
         dragOriginalFrame = frame
         dragBaseDrawing = canvasView.drawing
         dragBaseElements = elements
-        switch element {
-        case .image:
-            dragAttachedStrokes = []
-        case .annotation(let id):
-            if let annotation = elements.annotations.first(where: { $0.id == id }) {
-                dragAttachedStrokes = attachedStrokeIndexes(for: annotation, of: dragBaseDrawing)
-            } else {
-                dragAttachedStrokes = []
-            }
-            // Bake the attached ink onto the card and take the real strokes
-            // off the canvas for the duration of the drag — otherwise they
-            // trail behind the card as a lagging double image.
-            if !dragAttachedStrokes.isEmpty {
-                if let annotation = elements.annotations.first(where: { $0.id == id }) {
-                    let attached = dragAttachedStrokes.map { dragBaseDrawing.strokes[$0] }
-                    annotationViews[id]?.setInk(
-                        PKDrawing(strokes: attached).image(from: annotation.frame, scale: 2)
-                    )
-                }
-                var strokes = dragBaseDrawing.strokes
-                for index in dragAttachedStrokes.sorted(by: >) {
-                    strokes.remove(at: index)
-                }
-                dragStrokesHidden = true
-                canvasView.drawing = PKDrawing(strokes: strokes)
-            }
-        }
     }
 
     private func updateDrag(translation: CGPoint) {
         guard dragActive, let selected else { return }
         let dx = translation.x / zoom
         let dy = translation.y / zoom
-        if dragIsResize, case .image = selected {
+        if dragIsResize {
             let aspect = dragOriginalFrame.height / max(1, dragOriginalFrame.width)
             let w = max(40, dragOriginalFrame.width + dx)
             let newFrame = CGRect(x: dragOriginalFrame.minX, y: dragOriginalFrame.minY, width: w, height: w * aspect)
             setFrame(newFrame, for: selected)
         } else {
-            let newFrame = dragOriginalFrame.offsetBy(dx: dx, dy: dy)
-            setFrame(newFrame, for: selected)
-            if !dragAttachedStrokes.isEmpty, !dragStrokesHidden {
-                var strokes = dragBaseDrawing.strokes
-                let move = CGAffineTransform(translationX: dx, y: dy)
-                for i in dragAttachedStrokes {
-                    strokes[i].transform = dragBaseDrawing.strokes[i].transform.concatenating(move)
-                }
-                canvasView.drawing = PKDrawing(strokes: strokes)
-            }
+            setFrame(dragOriginalFrame.offsetBy(dx: dx, dy: dy), for: selected)
         }
     }
 
     private func endDrag() {
         guard dragActive else { return }
-        // Re-insert the strokes hidden at drag start, shifted by the total
-        // drag delta, before committing (so undo captures the full drawing).
-        if dragStrokesHidden, let selected, let frame = frameOf(selected) {
-            let move = CGAffineTransform(
-                translationX: frame.minX - dragOriginalFrame.minX,
-                y: frame.minY - dragOriginalFrame.minY
-            )
-            var strokes = dragBaseDrawing.strokes
-            for i in dragAttachedStrokes {
-                strokes[i].transform = dragBaseDrawing.strokes[i].transform.concatenating(move)
-            }
-            canvasView.drawing = PKDrawing(strokes: strokes)
-        }
-        dragStrokesHidden = false
         dragActive = false
         commitElementChange(from: dragBaseElements, fromDrawing: dragBaseDrawing)
-        // The real strokes are back on the canvas — drop the baked drag image.
-        for card in annotationViews.values { card.setInk(nil) }
         retryPendingEdgeShift()
         ensureRunwayForContent()
     }
 
-    /// Strokes whose render-bounds center lies inside the rect (images grab
-    /// everything written on them).
-    private func strokeIndexesCentered(in rect: CGRect, of drawing: PKDrawing) -> [Int] {
-        drawing.strokes.enumerated().compactMap { index, stroke in
-            let c = CGPoint(x: stroke.renderBounds.midX, y: stroke.renderBounds.midY)
-            return rect.contains(c) ? index : nil
-        }
-    }
-
     private func updateGestureStates() {
-        var inkMode = [EditorTool.pen, .marker, .eraser, .lasso].contains(config.tool)
-        if config.tool == .eraser, config.eraserMode == .lasso { inkMode = false }
-        canvasView.drawingGestureRecognizer.isEnabled = inkMode
-        
-        let allowTap = config.tool == .objects || config.tool == .annotation || selected != nil
-        objectTap.isEnabled = allowTap
-        
-        objectPan.isEnabled = config.tool == .objects
-        annotationPan.isEnabled = config.tool == .annotation
-        lassoErasePan.isEnabled = config.tool == .eraser && config.eraserMode == .lasso
-        holdPress.isEnabled = [EditorTool.pen, .marker].contains(config.tool)
-        
+        // Photo gestures stay finger-only and always on; the Pencil owns ink
+        // through PencilKit. Compact tiles set their own tool in apply().
         canvasView.drawingPolicy = .pencilOnly
-
-        canvasView.allowEditMenu = (config.tool == .lasso)
-        
-        canvasView.forceAppleTapsToWait(for: objectTap, ignoring: [objectsHost, annotationsHost])
+        // Let PencilKit's native lasso selection show its edit menu.
+        canvasView.allowEditMenu = true
     }
 
-    // MARK: Object mode gestures
+    // MARK: Photo gestures (finger-only)
 
     @objc private func handleObjectTap(_ gesture: UITapGestureRecognizer) {
-        let pt = pagePoint(from: gesture)
-        
-        if [EditorTool.pen, .marker, .eraser, .lasso].contains(config.tool) {
-            if elementAt(pt) != selected {
-                selected = nil
-                canvasView.endEditing(true)
-            }
-            return
-        }
-        
-        if config.tool == .annotation {
-            selected = annotationAt(pt).map { .annotation($0.id) }
-        } else {
-            selected = elementAt(pt)
-        }
+        selected = elementAt(pagePoint(from: gesture))
     }
 
     @objc private func handleObjectPan(_ gesture: UIPanGestureRecognizer) {
         let pt = startPagePoint(of: gesture)
         switch gesture.state {
         case .began:
-            // Grab the resize handle of a selected image first.
+            // Grab the resize handle of a selected photo first.
             if case .image(let id)? = selected,
                let frame = frameOf(.image(id)),
                hypot(pt.x - frame.maxX, pt.y - frame.maxY) < 28 {
@@ -1260,8 +998,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 beginDrag(of: hit, resize: false)
             } else {
                 selected = nil
-                gesture.isEnabled = false
-                gesture.isEnabled = true
             }
         case .changed:
             updateDrag(translation: gesture.translation(in: canvasView))
@@ -1272,17 +1008,12 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
-    // Hold: select an annotation together with the writing that belongs to it
-    // (or a photo), then drag to move both as one piece.
+    // Hold a photo with a finger to pick it up and move it — works even while
+    // an ink tool is active, because the Pencil keeps drawing.
     @objc private func handleHoldPress(_ gesture: UILongPressGestureRecognizer) {
         switch gesture.state {
         case .began:
-            let pt = pagePoint(from: gesture)
-            guard let hit = elementAt(pt) else { return }
-            // Cancel any ink the touch already started.
-            let drawingWasEnabled = canvasView.drawingGestureRecognizer.isEnabled
-            canvasView.drawingGestureRecognizer.isEnabled = false
-            canvasView.drawingGestureRecognizer.isEnabled = drawingWasEnabled
+            guard let hit = elementAt(pagePoint(from: gesture)) else { return }
             holdStartLocation = gesture.location(in: canvasView)
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             beginDrag(of: hit, resize: false)
@@ -1297,144 +1028,23 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
+    // holdPress and objectPan only engage when the touch starts on a photo, so
+    // empty-space finger touches fall through to PencilKit / two-finger scroll.
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if let pan = gestureRecognizer as? UIPanGestureRecognizer, pan === objectPan {
+            return elementAt(startPagePoint(of: pan)) != nil
+        }
         if gestureRecognizer === holdPress {
             let p = gestureRecognizer.location(in: canvasView)
             return elementAt(CGPoint(x: p.x / zoom, y: p.y / zoom)) != nil
         }
-        if gestureRecognizer === objectTap {
-            if [EditorTool.pen, .marker, .eraser, .lasso].contains(config.tool) {
-                let p = gestureRecognizer.location(in: canvasView)
-                let pt = CGPoint(x: p.x / zoom, y: p.y / zoom)
-                return elementAt(pt) != selected
-            }
-        }
         return true
     }
-    
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, canPrevent otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        if gestureRecognizer === objectTap {
-            if otherGestureRecognizer is ImmediatePanGestureRecognizer {
-                return false
-            }
-            return true
-        }
-        return false
-    }
-    
+
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        if gestureRecognizer === objectTap || otherGestureRecognizer === objectTap {
-            return true
-        }
-        return false
-    }
-
-    // Annotation tool: drag on empty space draws a new annotation; drag that
-    // starts on an existing annotation MOVES it (with its own writing).
-    @objc private func handleAnnotationPan(_ gesture: UIPanGestureRecognizer) {
-        let pt = pagePoint(from: gesture)
-        switch gesture.state {
-        case .began:
-            let startPt = startPagePoint(of: gesture)
-            if let annotation = annotationAt(startPt) {
-                annotationDrafting = false
-                beginDrag(of: .annotation(annotation.id), resize: false)
-            } else {
-                annotationDrafting = true
-                annotationStart = startPt
-            }
-        case .changed:
-            if annotationDrafting {
-                let rect = normalizedRect(annotationStart, pt)
-                draftLayer.path = UIBezierPath(roundedRect: rect, cornerRadius: 10).cgPath
-                draftLayer.fillColor = config.annotationColor.withAlphaComponent(0.6).cgColor
-                draftLayer.strokeColor = nil
-            } else {
-                updateDrag(translation: gesture.translation(in: canvasView))
-            }
-        case .ended:
-            if annotationDrafting {
-                annotationDrafting = false
-                draftLayer.path = nil
-                let rect = normalizedRect(annotationStart, pt)
-                guard rect.width > 12, rect.height > 12 else { return }
-                let before = elements
-                var annotation = AnnotationElement(
-                    x: 0, y: 0, w: 0, h: 0,
-                    colorHex: config.annotationColor.hexString,
-                    createdAt: Date().timeIntervalSince1970,
-                    strokeKeys: []
-                )
-                annotation.frame = rect
-                elements.annotations.append(annotation)
-                rebuildElementViews()
-                selected = .annotation(annotation.id)
-                commitElementChange(from: before, fromDrawing: canvasView.drawing)
-            } else {
-                endDrag()
-            }
-        case .cancelled, .failed:
-            annotationDrafting = false
-            draftLayer.path = nil
-            endDrag()
-        default:
-            break
-        }
-    }
-
-    // Freeform (lasso) eraser: encircle strokes, lift to delete them.
-    @objc private func handleLassoErase(_ gesture: UIPanGestureRecognizer) {
-        let pt = pagePoint(from: gesture)
-        switch gesture.state {
-        case .began:
-            lassoErasePoints = [startPagePoint(of: gesture), pt]
-        case .changed:
-            lassoErasePoints.append(pt)
-            let path = UIBezierPath()
-            path.move(to: lassoErasePoints[0])
-            for p in lassoErasePoints.dropFirst() { path.addLine(to: p) }
-            draftLayer.path = path.cgPath
-            draftLayer.fillColor = UIColor(Theme.pink).withAlphaComponent(0.10).cgColor
-            draftLayer.strokeColor = UIColor(Theme.pink).cgColor
-            draftLayer.lineWidth = 2 / max(0.05, zoom / fitScale)
-            draftLayer.lineDashPattern = [6, 4]
-        case .ended:
-            defer {
-                draftLayer.path = nil
-                draftLayer.strokeColor = nil
-                draftLayer.lineDashPattern = nil
-                lassoErasePoints = []
-            }
-            guard lassoErasePoints.count >= 3 else { return }
-            let polygon = UIBezierPath()
-            polygon.move(to: lassoErasePoints[0])
-            for p in lassoErasePoints.dropFirst() { polygon.addLine(to: p) }
-            polygon.close()
-            let before = canvasView.drawing
-            let kept = before.strokes.filter { stroke in
-                let c = CGPoint(x: stroke.renderBounds.midX, y: stroke.renderBounds.midY)
-                return !polygon.contains(c)
-            }
-            guard kept.count != before.strokes.count else { return }
-            canvasView.drawing = PKDrawing(strokes: kept)
-            commitElementChange(from: elements, fromDrawing: before)
-        case .cancelled, .failed:
-            draftLayer.path = nil
-            draftLayer.strokeColor = nil
-            draftLayer.lineDashPattern = nil
-            lassoErasePoints = []
-        default:
-            break
-        }
-    }
-
-    private func normalizedRect(_ a: CGPoint, _ b: CGPoint) -> CGRect {
-        CGRect(
-            x: min(a.x, b.x),
-            y: min(a.y, b.y),
-            width: abs(a.x - b.x),
-            height: abs(a.y - b.y)
-        )
+        // The finger-only photo recognizers coexist with each other and with
+        // PencilKit's own drawing / scroll / zoom gestures.
+        true
     }
 
     private func setFrame(_ frame: CGRect, for element: SelectedElement) {
@@ -1443,11 +1053,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             if let i = elements.images.firstIndex(where: { $0.id == id }) {
                 elements.images[i].frame = frame
                 imageViews[id]?.frame = frame
-            }
-        case .annotation(let id):
-            if let i = elements.annotations.firstIndex(where: { $0.id == id }) {
-                elements.annotations[i].frame = frame
-                annotationViews[id]?.frame = frame
             }
         }
         refreshSelectionLayer()
@@ -1509,7 +1114,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let before = elements
         switch selected {
         case .image(let id): elements.images.removeAll { $0.id == id }
-        case .annotation(let id): elements.annotations.removeAll { $0.id == id }
         }
         self.selected = nil
         rebuildElementViews()
@@ -1520,7 +1124,6 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let beforeElements = elements
         let beforeDrawing = canvasView.drawing
         elements.images = []
-        elements.annotations = []
         canvasView.drawing = PKDrawing()
         selected = nil
         rebuildElementViews()
@@ -1558,10 +1161,8 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     // PKCanvasViewDelegate
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
         let drawing = canvasView.drawing
-        trackNewStrokes(in: drawing)
-        // Mid-drag frames are transient (annotation drags even hide their
-        // attached strokes) — don't persist them; endDrag commits the final
-        // state once.
+        // Mid-drag frames are transient — don't persist them; endDrag commits
+        // the final state once.
         guard !dragActive else { return }
         onChange?(drawing, elements)
         if !toolInUse {
@@ -1584,20 +1185,5 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             )],
             title: title
         )
-    }
-}
-
-extension UIView {
-    func forceAppleTapsToWait(for objectTap: UITapGestureRecognizer, ignoring: [UIView]) {
-        for gesture in gestureRecognizers ?? [] {
-            if gesture === objectTap { continue }
-            if gesture is UITapGestureRecognizer || String(describing: type(of: gesture)).contains("Tap") {
-                gesture.require(toFail: objectTap)
-            }
-        }
-        for subview in subviews {
-            if ignoring.contains(where: { $0 === subview }) { continue }
-            subview.forceAppleTapsToWait(for: objectTap, ignoring: ignoring)
-        }
     }
 }

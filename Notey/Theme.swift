@@ -30,21 +30,6 @@ enum Theme {
         UIColor(red: 0.85, green: 0.55, blue: 0.64, alpha: 1),    // pink (accent)
     ]
 
-    static let markerColors: [UIColor] = [
-        UIColor(red: 0.96, green: 0.87, blue: 0.62, alpha: 1),    // sand
-        UIColor(red: 0.80, green: 0.86, blue: 0.94, alpha: 1),    // sky
-        UIColor(red: 0.82, green: 0.90, blue: 0.80, alpha: 1),    // sage
-        UIColor(red: 0.97, green: 0.84, blue: 0.88, alpha: 1),    // rose
-    ]
-
-    static let annotationColors: [UIColor] = [
-        UIColor(red: 0.94, green: 0.90, blue: 0.80, alpha: 1),    // beige
-        UIColor(red: 0.85, green: 0.88, blue: 0.93, alpha: 1),    // navy mist
-        UIColor(red: 0.88, green: 0.92, blue: 0.86, alpha: 1),    // sage mist
-        UIColor(red: 0.97, green: 0.89, blue: 0.92, alpha: 1),    // rose mist
-        UIColor(red: 0.93, green: 0.93, blue: 0.90, alpha: 1),    // stone
-    ]
-
     // Paper tints for custom note backgrounds (note settings sheet).
     static let paperColors: [String] = [
         "#FDFBF5", // cream (default)

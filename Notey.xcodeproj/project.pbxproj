@@ -24,16 +24,18 @@
 		C39FF7C68E7FF407162A8FE0 /* QuickNotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B19F2FF91070061C3AC49EB /* QuickNotesScreen.swift */; };
 		DEC3F4096CCD84527AD059F4 /* TabsBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A8650DA2DBD94F07ED0CEC /* TabsBarView.swift */; };
 		E338844CFC483DFD624008CA /* NoteSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */; };
+		E963E6DB86739202D2AE18F3 /* ShapeRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBF5A36C43E92DC562C4E92 /* ShapeRecognizer.swift */; };
 		ED79DD1FE4A9029EB630E495 /* Decor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CF4AA211C25A2EB28D43CD5 /* Decor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1997E30A4E5F007FECCF2E90 /* Notey.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Notey.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1997E30A4E5F007FECCF2E90 /* Notey.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Notey.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1CD7A445BBCA55D1F9A8D5B6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteSettingsView.swift; sourceTree = "<group>"; };
 		2BFE9EA612E8275F06792443 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		3577B88440AC35DEA985DC16 /* NoteThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteThumbnail.swift; sourceTree = "<group>"; };
 		4C0A8204493F8081A72E9EAD /* FolderGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderGridView.swift; sourceTree = "<group>"; };
+		4FBF5A36C43E92DC562C4E92 /* ShapeRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShapeRecognizer.swift; sourceTree = "<group>"; };
 		72E253EC8026FFD2B23DFD0E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7CF4AA211C25A2EB28D43CD5 /* Decor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Decor.swift; sourceTree = "<group>"; };
 		9A28C237DC144F62789F8AEA /* DateUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DateUtils.swift; sourceTree = "<group>"; };
@@ -113,6 +115,7 @@
 				A87FD871C881D522DE25765D /* NoteExporter.swift */,
 				1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */,
 				3577B88440AC35DEA985DC16 /* NoteThumbnail.swift */,
+				4FBF5A36C43E92DC562C4E92 /* ShapeRecognizer.swift */,
 			);
 			path = Canvas;
 			sourceTree = "<group>";
@@ -201,6 +204,7 @@
 				AFE1BF8CBEB9276A7E60A914 /* NoteyApp.swift in Sources */,
 				33F0FA79BAFCD1A34DA3B451 /* QuickNoteCard.swift in Sources */,
 				C39FF7C68E7FF407162A8FE0 /* QuickNotesScreen.swift in Sources */,
+				E963E6DB86739202D2AE18F3 /* ShapeRecognizer.swift in Sources */,
 				89F12C16E36719EC5A6904B4 /* SidebarView.swift in Sources */,
 				DEC3F4096CCD84527AD059F4 /* TabsBarView.swift in Sources */,
 				0CCDFA1B5872E8C5926C9388 /* Theme.swift in Sources */,
@@ -281,7 +285,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = CA4P98NZAJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Notey/Info.plist;
@@ -362,7 +365,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = CA4P98NZAJ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Notey/Info.plist;
