@@ -55,14 +55,7 @@ struct SidebarView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 8)
 
-                navRow(
-                    icon: "calendar",
-                    label: "Kalendarz",
-                    active: route == .calendar
-                ) {
-                    route = .calendar
-                    onSelect()
-                }
+                calendarImageRow
 
                 navRow(
                     icon: "tray.full",
@@ -291,6 +284,26 @@ struct SidebarView: View {
                 Label("Usuń folder", systemImage: "trash")
             }
         }
+    }
+
+    // The calendar entry is just the desk-calendar image, edge-to-edge across
+    // the full sidebar width — no frame or padding around it.
+    private var calendarImageRow: some View {
+        Button {
+            route = .calendar
+            onSelect()
+        } label: {
+            Image("calendar")
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        // Cancel the surrounding VStack's horizontal padding so it spans full width.
+        .padding(.horizontal, -6)
+        .padding(.bottom, 6)
+        .accessibilityLabel("Kalendarz")
     }
 
     private func navRow(
