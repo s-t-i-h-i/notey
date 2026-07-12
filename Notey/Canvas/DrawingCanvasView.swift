@@ -411,12 +411,14 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         objectTap = UITapGestureRecognizer(target: self, action: #selector(handleObjectTap(_:)))
         objectTap.delegate = self
         objectTap.allowedTouchTypes = fingerOnly
+        objectTap.isEnabled = !compact
         canvasView.addGestureRecognizer(objectTap)
 
         objectPan = UIPanGestureRecognizer(target: self, action: #selector(handleObjectPan(_:)))
         objectPan.delegate = self
         objectPan.maximumNumberOfTouches = 1
         objectPan.allowedTouchTypes = fingerOnly
+        objectPan.isEnabled = !compact
         canvasView.addGestureRecognizer(objectPan)
         // A one-finger drag that starts on a photo (or its resize handle)
         // belongs to the photo — the canvas scroll must wait for that verdict,
@@ -430,6 +432,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         holdPress.minimumPressDuration = 0.4
         holdPress.delegate = self
         holdPress.allowedTouchTypes = fingerOnly
+        holdPress.isEnabled = !compact
         canvasView.addGestureRecognizer(holdPress)
 
         // Shape straightening rides on top of PencilKit (Pencil-only); compact
@@ -490,6 +493,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             newPicker = PKToolPicker()
         }
         
+        newPicker.colorUserInterfaceStyle = .light
+        newPicker.overrideUserInterfaceStyle = .light
+        
         toolPicker = newPicker
         if isVisible {
             applyToolPickerVisibility()
@@ -514,7 +520,13 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     override func didMoveToWindow() {
         super.didMoveToWindow()
         // First responder + picker can only attach once we're in a window.
-        if window != nil { applyToolPickerVisibility() }
+        if window != nil {
+            if toolPickerVisible && toolPicker == nil {
+                rebuildToolPickerIfNeeded()
+            } else {
+                applyToolPickerVisibility()
+            }
+        }
     }
 
     // MARK: Pages
@@ -1156,6 +1168,13 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         // one finger draws and TWO fingers scroll.
         canvasView.panGestureRecognizer.minimumNumberOfTouches = devFingerDrawing ? 2 : 1
         canvasView.panGestureRecognizer.allowedTouchTypes = Self.fingerAndPointerTouchTypes
+        if compact {
+            canvasView.panGestureRecognizer.isEnabled = false
+            canvasView.pinchGestureRecognizer?.isEnabled = false
+        } else {
+            canvasView.panGestureRecognizer.isEnabled = true
+            canvasView.pinchGestureRecognizer?.isEnabled = true
+        }
         // Let PencilKit's native lasso selection show its edit menu.
         canvasView.allowEditMenu = true
     }
