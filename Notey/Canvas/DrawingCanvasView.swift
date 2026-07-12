@@ -75,6 +75,8 @@ struct DrawingCanvas: UIViewRepresentable {
     var showsToolPicker: Bool = false
     // Auto-straighten hand-drawn shapes ("draw and hold" → ideal shape).
     var shapeDetection: Bool = true
+    // Developer mode: fingers/pointer draw (Simulator testing). Editor only.
+    var devFingerDrawing: Bool = false
     // Decoded custom template image (kept out of `config` so its bytes don't
     // enter the per-update Equatable check — change is tracked via config.customTemplateKey).
     var customTemplateImage: UIImage? = nil
@@ -92,6 +94,7 @@ struct DrawingCanvas: UIViewRepresentable {
         container.onSelection = onSelection
         container.customTemplateImage = customTemplateImage
         container.shapeDetectionEnabled = shapeDetection
+        container.devFingerDrawing = devFingerDrawing
         container.apply(config: config)
         container.setToolPickerVisible(showsToolPicker)
         proxy.container = container
@@ -103,6 +106,7 @@ struct DrawingCanvas: UIViewRepresentable {
         container.onSelection = onSelection
         container.customTemplateImage = customTemplateImage
         container.shapeDetectionEnabled = shapeDetection
+        container.devFingerDrawing = devFingerDrawing
         container.apply(config: config)
         container.setToolPickerVisible(showsToolPicker)
         proxy.container = container
@@ -117,13 +121,101 @@ private final class ImmediateShapeLayer: CAShapeLayer {
     override func action(forKey event: String) -> CAAction? { nil }
 }
 
+// MARK: - Page ruling (dots / lines / grid) on a tiled layer
+
+// A fixed-resolution pattern layer shimmers and aliases while the canvas is
+// pinch-zoomed (subpixel dots strobe) and blurs at rest when zoomed in. A
+// CATiledLayer — the native mechanism behind PDF/map zooming — re-renders the
+// ruling vector-crisp per zoom level on background threads, for the fixed
+// page cards and the enormous infinite sheet alike.
+private final class NoFadeTiledLayer: CATiledLayer {
+    // Fresh tiles must appear instantly — the default 0.25s cross-fade reads
+    // as background flicker.
+    override class func fadeDuration() -> CFTimeInterval { 0 }
+}
+
+private final class PatternTilingView: UIView {
+    // Read from CATiledLayer's background drawing threads; written on main
+    // before setNeedsDisplay. UIColor is immutable, so this is safe.
+    var kind: CanvasBackground = .blank
+
+    override class var layerClass: AnyClass { NoFadeTiledLayer.self }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isOpaque = false
+        backgroundColor = .clear
+        if let tiled = layer as? CATiledLayer {
+            tiled.tileSize = CGSize(width: 768, height: 768)
+            tiled.levelsOfDetail = 5       // crisp down to 1/16× zoom-out
+            tiled.levelsOfDetailBias = 5   // crisp up to 32× zoom-in
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func draw(_ rect: CGRect) {
+        guard kind != .blank else { return }
+        let spacing: CGFloat = 56
+        switch kind {
+        case .blank:
+            break
+        case .dots:
+            let r: CGFloat = 1.5
+            Theme.patternUI.setFill()
+            guard let ctx = UIGraphicsGetCurrentContext() else { return }
+            let x0 = max(1, Int(floor((rect.minX - r) / spacing)))
+            let x1 = Int(ceil((rect.maxX + r) / spacing))
+            let y0 = max(1, Int(floor((rect.minY - r) / spacing)))
+            let y1 = Int(ceil((rect.maxY + r) / spacing))
+            guard x1 >= x0, y1 >= y0 else { return }
+            for yi in y0...y1 {
+                for xi in x0...x1 {
+                    ctx.fillEllipse(in: CGRect(
+                        x: CGFloat(xi) * spacing - r,
+                        y: CGFloat(yi) * spacing - r,
+                        width: r * 2,
+                        height: r * 2
+                    ))
+                }
+            }
+        case .lines, .grid:
+            Theme.patternUI.withAlphaComponent(0.55).setFill()
+            guard let ctx = UIGraphicsGetCurrentContext() else { return }
+            let y0 = max(1, Int(floor((rect.minY - 1) / spacing)))
+            let y1 = Int(ceil((rect.maxY + 1) / spacing))
+            if y1 >= y0 {
+                for yi in y0...y1 {
+                    ctx.fill(CGRect(x: rect.minX, y: CGFloat(yi) * spacing - 0.5, width: rect.width, height: 1))
+                }
+            }
+            if kind == .grid {
+                let x0 = max(1, Int(floor((rect.minX - 1) / spacing)))
+                let x1 = Int(ceil((rect.maxX + 1) / spacing))
+                if x1 >= x0 {
+                    for xi in x0...x1 {
+                        ctx.fill(CGRect(x: CGFloat(xi) * spacing - 0.5, y: rect.minY, width: 1, height: rect.height))
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Container view (pages + pattern + photos + PencilKit ink)
 
-// Z-order, bottom to top:
-//   1. page cards + background pattern
-//   2. photos
-//   3. handwriting (PencilKit)
-//   4. selection outline (overlayHost, photos only)
+// Z-order, bottom to top (all SIBLINGS of the PKCanvasView, not subviews —
+// PencilKit re-composites its own internals during pinch zoom, and anything
+// living inside it flickers when that happens):
+//   1. objectsHost — page cards + background pattern + photos
+//   2. canvasView  — PencilKit ink (fully transparent background)
+//   3. overlayHost — selection outline (photos only)
+// The hosts live in page coordinates and are glued to the scroll position by
+// syncHosts() on every scroll/zoom tick (translate by -contentOffset, scale
+// by zoomScale) — both delegate callbacks fire synchronously within the same
+// frame, so ink and paper never drift apart.
 
 final class NoteyCanvasView: PKCanvasView {
     var allowEditMenu: Bool = true
@@ -142,12 +234,18 @@ final class NoteyCanvasView: PKCanvasView {
 
 final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDelegate {
 
+    // Fingers and trackpad pointer; never the Pencil.
+    static let fingerAndPointerTouchTypes: [NSNumber] = [
+        NSNumber(value: UITouch.TouchType.direct.rawValue),
+        NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)
+    ]
+
     let canvasView = NoteyCanvasView()
     private let objectsHost = UIView()      // below the ink: pages + photos
     private let overlayHost = UIView()      // above the ink: selection outline
     private let pagesHost = UIView()
     private var pageCards: [UIView] = []
-    private var patternLayers: [CAShapeLayer] = []
+    private var patternViews: [PatternTilingView] = []
     private var templateLayers: [CALayer] = []
     // Delivered by DrawingCanvas; used to render the .custom page template.
     var customTemplateImage: UIImage?
@@ -219,9 +317,22 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     var shapeDetectionEnabled = true {
         didSet { shapeSnapper?.isEnabled = shapeDetectionEnabled && !compact }
     }
+    // Developer mode (Simulator has no Pencil): fingers/pointer draw ink and
+    // trigger the hold-to-snap, two fingers scroll. Never on for compact tiles.
+    var devFingerDrawing = false {
+        didSet {
+            guard devFingerDrawing != oldValue else { return }
+            shapeSnapper?.acceptsFingerTouches = devFingerDrawing
+            updateGestureStates()
+        }
+    }
     // Stroke count when the current tool interaction began — tells a fresh ink
     // stroke (a snap candidate) apart from an erase or a lasso move.
     private var strokeCountAtToolBegin = 0
+    // PencilKit commits strokes ASYNCHRONOUSLY: when canvasViewDidEndUsingTool
+    // fires, the fresh stroke is often not in drawing.strokes yet. This flag
+    // defers the shape-snap check to the next canvasViewDrawingDidChange.
+    private var pendingSnapCheck = false
 
     var undoManagerForCanvas: UndoManager? { canvasView.undoManager ?? undoManager }
 
@@ -232,6 +343,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         self.compact = compact
         super.init(frame: .zero)
         backgroundColor = compact ? Theme.cardUI : UIColor(Theme.bg)
+        // The hosts extend far beyond the visible frame (they cover the whole
+        // page space) — without clipping they would paint over neighbors.
+        clipsToBounds = true
 
         // Ink colors must not invert in dark mode (WYSIWYG on the beige page).
         overrideUserInterfaceStyle = .light
@@ -245,21 +359,22 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         // Compact tiles never scroll: the whole page is fit into the tile, and
         // one-finger drags belong to the surrounding month grid, not the tile.
         canvasView.isScrollEnabled = !compact
-        // Pencil-only writing: only the Pencil draws (drawingPolicy = .pencilOnly).
-        // Two fingers scroll, pinch zooms; a single finger never marks the page.
-        canvasView.panGestureRecognizer.minimumNumberOfTouches = 2
-        // Trackpad / mouse wheel pans too (touch pans still need two fingers).
+        // Coherent touch model everywhere (canvas, calendar grid): the Pencil
+        // draws, one OR two fingers scroll, pinch zooms, and a finger never
+        // marks the page (drawingPolicy = .pencilOnly). Fingers and trackpad
+        // only — the Pencil must never pan.
+        canvasView.panGestureRecognizer.minimumNumberOfTouches = 1
+        canvasView.panGestureRecognizer.allowedTouchTypes = Self.fingerAndPointerTouchTypes
+        // Trackpad / mouse wheel pans too.
         canvasView.panGestureRecognizer.allowedScrollTypesMask = .all
-        addSubview(canvasView)
 
-        objectsHost.frame = CGRect(origin: .zero, size: totalSize)
         objectsHost.layer.anchorPoint = .zero
         objectsHost.layer.position = .zero
+        objectsHost.isUserInteractionEnabled = false
 
         pagesHost.frame = CGRect(origin: .zero, size: totalSize)
         objectsHost.addSubview(pagesHost)
 
-        overlayHost.frame = CGRect(origin: .zero, size: totalSize)
         overlayHost.layer.anchorPoint = .zero
         overlayHost.layer.position = .zero
         overlayHost.isUserInteractionEnabled = false
@@ -271,10 +386,12 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         overlayHost.layer.addSublayer(selectionLayer)
 
-        // objectsHost stays under PencilKit's own rendering; overlayHost
-        // (added last) sits above the ink.
-        canvasView.insertSubview(objectsHost, at: 0)
-        canvasView.addSubview(overlayHost)
+        // Siblings of the canvas — paper below the (transparent) ink layer,
+        // selection above it. See the z-order note at the top of the class.
+        addSubview(objectsHost)
+        addSubview(canvasView)
+        addSubview(overlayHost)
+        syncHostSizes()
 
         // Photo gestures — all finger-only (the Pencil is reserved for ink and
         // shape-holding). They select / move / resize photos and coexist with
@@ -291,6 +408,12 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         objectPan.maximumNumberOfTouches = 1
         objectPan.allowedTouchTypes = fingerOnly
         canvasView.addGestureRecognizer(objectPan)
+        // A one-finger drag that starts on a photo (or its resize handle)
+        // belongs to the photo — the canvas scroll must wait for that verdict,
+        // otherwise resizing a photo also pans the canvas. Off-photo drags
+        // fail objectPan instantly (gestureRecognizerShouldBegin), so normal
+        // scrolling is unaffected.
+        canvasView.panGestureRecognizer.require(toFail: objectPan)
 
         // Hold & drag a photo (finger), even while an ink tool is active.
         holdPress = UILongPressGestureRecognizer(target: self, action: #selector(handleHoldPress(_:)))
@@ -359,7 +482,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private func rebuildPages() {
         for card in pageCards { card.removeFromSuperview() }
         pageCards.removeAll()
-        patternLayers.removeAll()
+        patternViews.removeAll()
         templateLayers.removeAll()
 
         pagesHost.frame = CGRect(origin: .zero, size: totalSize)
@@ -380,11 +503,19 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 card.layer.shadowOpacity = 0.08
                 card.layer.shadowRadius = 14
                 card.layer.shadowOffset = CGSize(width: 0, height: 4)
+                // Without an explicit path the shadow is re-derived from the
+                // layer's alpha every frame — an offscreen pass that visibly
+                // shimmers during pinch zoom.
+                card.layer.shadowPath = UIBezierPath(
+                    roundedRect: CGRect(origin: .zero, size: frame.size),
+                    cornerRadius: card.layer.cornerRadius
+                ).cgPath
             }
-            let pattern = CAShapeLayer()
-            pattern.frame = CGRect(origin: .zero, size: frame.size)
-            card.layer.addSublayer(pattern)
-            patternLayers.append(pattern)
+            let pattern = PatternTilingView(frame: CGRect(origin: .zero, size: frame.size))
+            pattern.layer.cornerRadius = card.layer.cornerRadius
+            pattern.layer.masksToBounds = true
+            card.addSubview(pattern)
+            patternViews.append(pattern)
             // Decorative template sits above the ruling pattern, still under
             // the ink (all card layers are below PencilKit's rendering).
             let template = CALayer()
@@ -397,6 +528,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             pagesHost.addSubview(card)
             pageCards.append(card)
         }
+        syncHostSizes()
         redrawPattern()
         redrawTemplate()
         updateGeometry()
@@ -469,18 +601,27 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             bottom: compact ? 0 : 140,
             right: horizontalInset
         )
-        syncOverlay()
+        syncHosts()
     }
 
-    private func syncOverlay() {
+    /// Glue the sibling hosts to the canvas content: page point p renders at
+    /// p·zoom − contentOffset, exactly where PencilKit puts the ink.
+    private func syncHosts() {
         let z = zoom
-        let transform = CGAffineTransform(scaleX: z, y: z)
+        let offset = canvasView.contentOffset
+        let transform = CGAffineTransform(translationX: -offset.x, y: -offset.y)
+            .scaledBy(x: z, y: z)
         objectsHost.transform = transform
         overlayHost.transform = transform
-        // Overlay lines live in page space (they scale with the zoom); keep
-        // them visually constant.
-        let rel = max(0.05, z / fitScale)
-        selectionLayer.lineWidth = 1.5 / rel
+        if selected != nil { refreshSelectionLayer() }
+    }
+
+    /// The hosts' bounds only need to cover the page space (nothing clips or
+    /// lays out against them, but stale sizes invite subtle bugs).
+    private func syncHostSizes() {
+        let size = totalSize
+        objectsHost.bounds = CGRect(origin: .zero, size: size)
+        overlayHost.bounds = CGRect(origin: .zero, size: size)
     }
 
     override func layoutSubviews() {
@@ -501,16 +642,19 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             let wasAtFit = abs(canvasView.zoomScale - fitScale) < 0.001
             updateGeometry(resetZoom: wasAtFit)
         }
+        syncHosts()
     }
 
-    // PKCanvasViewDelegate (UIScrollViewDelegate) — keep overlays glued to ink.
+    // PKCanvasViewDelegate (UIScrollViewDelegate) — keep paper and overlays
+    // glued to the ink on every zoom/scroll tick.
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
-        syncOverlay()
+        syncHosts()
     }
 
     // Scrolling drives the infinite growth; deferred edge shifts are retried
     // once the gesture settles.
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        syncHosts()
         ensureRunwayForViewport()
     }
 
@@ -546,8 +690,10 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             }
         }
 
+        // Drawing policy + pan reconfig live in updateGestureStates — setting
+        // the policy again here would re-trigger PencilKit's pan reset AFTER
+        // the re-assert and undo it.
         updateGestureStates()
-        canvasView.drawingPolicy = .pencilOnly
 
         if previousConfig.layout != config.layout {
             // Keep the ink where the layout expects it: centered on a freshly
@@ -572,11 +718,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             redrawPattern()
         }
         if previousConfig.paperColorHex != config.paperColorHex {
-            if config.layout == .infinite {
-                redrawPattern()
-            } else {
-                for card in pageCards { card.backgroundColor = paperUIColor }
-            }
+            for card in pageCards { card.backgroundColor = paperUIColor }
         }
         // Template redraw (a full rebuild above already refreshed it).
         let rebuilt = previousConfig.layout != config.layout || previousConfig.orientation != config.orientation
@@ -737,9 +879,10 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private func applySheetGeometry() {
         guard config.layout == .infinite else { return }
         pagesHost.frame = CGRect(origin: .zero, size: infiniteSheet)
+        syncHostSizes()
         if let card = pageCards.first {
             card.frame = CGRect(origin: .zero, size: infiniteSheet)
-            patternLayers.first?.frame = card.bounds
+            patternViews.first?.frame = card.bounds
         }
         canvasView.contentSize = CGSize(
             width: infiniteSheet.width * zoom,
@@ -763,87 +906,14 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     // MARK: Pattern
 
     private func redrawPattern() {
-        // Infinite sheet: a vector path over 120k x 120k would mean millions
-        // of segments. A 56pt tiled pattern image renders in O(viewport).
-        if config.layout == .infinite {
-            for pattern in patternLayers {
-                pattern.path = nil
-                pattern.fillColor = nil
-                pattern.strokeColor = nil
-            }
-            pageCards.first?.backgroundColor = tiledPatternColor()
-            return
-        }
+        // The ruling is drawn by CATiledLayer-backed views: only visible tiles
+        // render (O(viewport) even on the 90k-pt infinite sheet), each zoom
+        // level re-renders crisp, and nothing shimmers during pinch.
         for card in pageCards { card.backgroundColor = paperUIColor }
-
-        let path = UIBezierPath()
-        let spacing: CGFloat = 56
-        let area = sheetSize
-        var isDots = false
-        switch config.background {
-        case .blank:
-            break
-        case .dots:
-            isDots = true
-            var y = spacing
-            while y < area.height {
-                var x = spacing
-                while x < area.width {
-                    path.append(UIBezierPath(ovalIn: CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3)))
-                    x += spacing
-                }
-                y += spacing
-            }
-        case .lines, .grid:
-            var y = spacing
-            while y < area.height {
-                path.move(to: CGPoint(x: 0, y: y))
-                path.addLine(to: CGPoint(x: area.width, y: y))
-                y += spacing
-            }
-            if config.background == .grid {
-                var x = spacing
-                while x < area.width {
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: area.height))
-                    x += spacing
-                }
-            }
+        for pattern in patternViews {
+            pattern.kind = config.background
+            pattern.layer.setNeedsDisplay()
         }
-        for pattern in patternLayers {
-            pattern.path = path.cgPath
-            pattern.fillColor = isDots ? Theme.patternUI.cgColor : nil
-            pattern.strokeColor = isDots ? nil : Theme.patternUI.withAlphaComponent(0.55).cgColor
-            pattern.lineWidth = 1
-        }
-    }
-
-    /// Paper + pattern baked into one repeating 56pt tile (rendered at 4x so
-    /// it stays crisp at max zoom).
-    private func tiledPatternColor() -> UIColor {
-        let spacing: CGFloat = 56
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 4
-        format.opaque = true
-        let tile = UIGraphicsImageRenderer(size: CGSize(width: spacing, height: spacing), format: format)
-            .image { ctx in
-                paperUIColor.setFill()
-                ctx.fill(CGRect(x: 0, y: 0, width: spacing, height: spacing))
-                switch config.background {
-                case .blank:
-                    break
-                case .dots:
-                    Theme.patternUI.setFill()
-                    ctx.cgContext.fillEllipse(in: CGRect(x: spacing / 2 - 1.5, y: spacing / 2 - 1.5, width: 3, height: 3))
-                case .lines, .grid:
-                    Theme.patternUI.withAlphaComponent(0.55).setFill()
-                    ctx.fill(CGRect(x: 0, y: spacing - 1, width: spacing, height: 1))
-                    if config.background == .grid {
-                        ctx.fill(CGRect(x: spacing - 1, y: 0, width: 1, height: spacing))
-                    }
-                }
-            }
-        return UIColor(patternImage: tile)
     }
 
     // MARK: Template (decorative page background)
@@ -882,10 +952,30 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
             selectionLayer.path = nil
             return
         }
-        let path = UIBezierPath(roundedRect: frame.insetBy(dx: -6, dy: -6), cornerRadius: 10)
+        // The overlay layer lives in page space (scaled by zoom), so all the
+        // chrome sizes are divided back by the zoom to stay screen-constant.
+        let z = zoom
+        let pad = 6 / z
+        let handleR = 11 / z
+        selectionLayer.lineWidth = 1.6 / z
+        selectionLayer.lineDashPattern = [NSNumber(value: Double(6 / z)), NSNumber(value: Double(4 / z))]
+        let path = UIBezierPath(roundedRect: frame.insetBy(dx: -pad, dy: -pad), cornerRadius: 10 / z)
         // Resize handle (bottom-right).
-        path.append(UIBezierPath(ovalIn: CGRect(x: frame.maxX - 9, y: frame.maxY - 9, width: 18, height: 18)))
+        path.append(UIBezierPath(ovalIn: CGRect(
+            x: frame.maxX - handleR, y: frame.maxY - handleR,
+            width: handleR * 2, height: handleR * 2
+        )))
         selectionLayer.path = path.cgPath
+    }
+
+    /// Hit test for the resize handle of the selected photo. The grab radius
+    /// is screen-constant (the handle is drawn screen-constant too) and the
+    /// handle straddles the photo's corner, so this must run BEFORE any
+    /// "inside the frame" checks — most of the handle lies outside the frame.
+    private func resizeHandleTarget(at point: CGPoint) -> SelectedElement? {
+        guard case .image(let id)? = selected, let frame = frameOf(.image(id)) else { return nil }
+        let grab = max(16, 26 / zoom)
+        return hypot(point.x - frame.maxX, point.y - frame.maxY) <= grab ? .image(id) : nil
     }
 
     private func frameOf(_ element: SelectedElement) -> CGRect? {
@@ -920,22 +1010,52 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     // fresh ink stroke (a shape-snap candidate) from an erase when it ends.
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = true
+        pendingSnapCheck = false
         strokeCountAtToolBegin = canvasView.drawing.strokes.count
+        // A hold left armed by the previous interaction (e.g. holding the
+        // eraser still) must never straighten this fresh stroke.
+        shapeSnapper?.strokeDidBegin()
     }
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = false
         // Straighten the just-finished stroke if the Pencil was held still at
         // its end and exactly one ink stroke was added (not an erase/lasso).
-        if canvasView.tool is PKInkingTool,
-           canvasView.drawing.strokes.count == strokeCountAtToolBegin + 1 {
-            shapeSnapper?.inkStrokeDidEnd()
+        // PencilKit often commits the stroke AFTER this callback — when the
+        // count hasn't ticked up yet, defer the check to drawingDidChange.
+        if canvasView.tool is PKInkingTool {
+            if canvasView.drawing.strokes.count == strokeCountAtToolBegin + 1 {
+                shapeSnapper?.inkStrokeDidEnd()
+            } else {
+                snapLog("stroke not committed yet — deferring snap check")
+                pendingSnapCheck = true
+            }
         }
         retryPendingEdgeShift()
         ensureRunwayForContent()
     }
 
     // MARK: Photo drag machinery
+
+    // Scroll views ABOVE this canvas (the month grid) suspended for the length
+    // of a photo drag — a drag/resize must never simultaneously pan them.
+    private var suspendedScrollViews: [UIScrollView] = []
+
+    private func suspendEnclosingScrollViews() {
+        var view: UIView? = superview
+        while let current = view {
+            if let scrollView = current as? UIScrollView, scrollView.isScrollEnabled {
+                scrollView.isScrollEnabled = false   // cancels any pan in flight
+                suspendedScrollViews.append(scrollView)
+            }
+            view = current.superview
+        }
+    }
+
+    private func resumeEnclosingScrollViews() {
+        for scrollView in suspendedScrollViews { scrollView.isScrollEnabled = true }
+        suspendedScrollViews.removeAll()
+    }
 
     private func beginDrag(of element: SelectedElement, resize: Bool) {
         guard let frame = frameOf(element) else { return }
@@ -945,6 +1065,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         dragOriginalFrame = frame
         dragBaseDrawing = canvasView.drawing
         dragBaseElements = elements
+        suspendEnclosingScrollViews()
     }
 
     private func updateDrag(translation: CGPoint) {
@@ -952,8 +1073,11 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         let dx = translation.x / zoom
         let dy = translation.y / zoom
         if dragIsResize {
+            // Corner handle: follow whichever axis moved further, so dragging
+            // straight down grows the photo just like dragging right.
             let aspect = dragOriginalFrame.height / max(1, dragOriginalFrame.width)
-            let w = max(40, dragOriginalFrame.width + dx)
+            let growth = max(dx, aspect > 0 ? dy / aspect : dx)
+            let w = max(40, dragOriginalFrame.width + growth)
             let newFrame = CGRect(x: dragOriginalFrame.minX, y: dragOriginalFrame.minY, width: w, height: w * aspect)
             setFrame(newFrame, for: selected)
         } else {
@@ -964,6 +1088,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private func endDrag() {
         guard dragActive else { return }
         dragActive = false
+        resumeEnclosingScrollViews()
         commitElementChange(from: dragBaseElements, fromDrawing: dragBaseDrawing)
         retryPendingEdgeShift()
         ensureRunwayForContent()
@@ -972,7 +1097,16 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     private func updateGestureStates() {
         // Photo gestures stay finger-only and always on; the Pencil owns ink
         // through PencilKit. Compact tiles set their own tool in apply().
-        canvasView.drawingPolicy = .pencilOnly
+        // Developer mode flips fingers from scrolling to drawing so the whole
+        // ink pipeline (including hold-to-snap) can be exercised on the
+        // Simulator, which has no Pencil.
+        canvasView.drawingPolicy = devFingerDrawing ? .anyInput : .pencilOnly
+        // PencilKit re-configures the scroll pan when the drawing policy is
+        // applied — re-assert the coherent touch model (one-finger finger/
+        // pointer pan, never the Pencil) every time. With finger drawing on,
+        // one finger draws and TWO fingers scroll.
+        canvasView.panGestureRecognizer.minimumNumberOfTouches = devFingerDrawing ? 2 : 1
+        canvasView.panGestureRecognizer.allowedTouchTypes = Self.fingerAndPointerTouchTypes
         // Let PencilKit's native lasso selection show its edit menu.
         canvasView.allowEditMenu = true
     }
@@ -988,10 +1122,8 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         switch gesture.state {
         case .began:
             // Grab the resize handle of a selected photo first.
-            if case .image(let id)? = selected,
-               let frame = frameOf(.image(id)),
-               hypot(pt.x - frame.maxX, pt.y - frame.maxY) < 28 {
-                beginDrag(of: .image(id), resize: true)
+            if let handle = resizeHandleTarget(at: pt) {
+                beginDrag(of: handle, resize: true)
                 return
             }
             if let hit = elementAt(pt) {
@@ -1028,11 +1160,14 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
     }
 
-    // holdPress and objectPan only engage when the touch starts on a photo, so
-    // empty-space finger touches fall through to PencilKit / two-finger scroll.
+    // holdPress and objectPan only engage when the touch starts on a photo (or
+    // on the selected photo's resize handle, which straddles the frame corner
+    // and mostly lies OUTSIDE the frame), so empty-space finger touches fall
+    // through to PencilKit / two-finger scroll.
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if let pan = gestureRecognizer as? UIPanGestureRecognizer, pan === objectPan {
-            return elementAt(startPagePoint(of: pan)) != nil
+            let pt = startPagePoint(of: pan)
+            return resizeHandleTarget(at: pt) != nil || elementAt(pt) != nil
         }
         if gestureRecognizer === holdPress {
             let p = gestureRecognizer.location(in: canvasView)
@@ -1043,8 +1178,11 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
         // The finger-only photo recognizers coexist with each other and with
-        // PencilKit's own drawing / scroll / zoom gestures.
-        true
+        // PencilKit's own drawing / scroll / zoom gestures — but NOT with
+        // gestures of enclosing views (e.g. the month grid's scroll view):
+        // dragging or resizing a photo must never also pan the container.
+        guard let otherView = otherGestureRecognizer.view else { return false }
+        return otherView === canvasView || otherView.isDescendant(of: canvasView)
     }
 
     private func setFrame(_ frame: CGRect, for element: SelectedElement) {
@@ -1160,6 +1298,15 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     // PKCanvasViewDelegate
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
+        // The stroke that ended a moment ago has now been committed — run the
+        // deferred shape-snap check (see canvasViewDidEndUsingTool). Clear the
+        // flag FIRST: the snap itself swaps the drawing and re-enters here.
+        if pendingSnapCheck {
+            pendingSnapCheck = false
+            if canvasView.drawing.strokes.count == strokeCountAtToolBegin + 1 {
+                shapeSnapper?.inkStrokeDidEnd()
+            }
+        }
         let drawing = canvasView.drawing
         // Mid-drag frames are transient — don't persist them; endDrag commits
         // the final state once.

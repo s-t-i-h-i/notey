@@ -9,8 +9,13 @@ schemes:
     build:
       targets:
         Notey: all
+        NoteyUITests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - NoteyUITests
 targets:
   Notey:
     type: application
@@ -32,3 +37,20 @@ targets:
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: NO
         SUPPORTS_MACCATALYST: NO
+  # Simulator driver for the pencil-free ink pipeline (dev finger-drawing
+  # mode): synthesizes draw-and-hold touches that a plain unit test cannot.
+  NoteyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - NoteyUITests
+    dependencies:
+      - target: Notey
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.adrian.notey.uitests
+        TEST_TARGET_NAME: Notey
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "2"

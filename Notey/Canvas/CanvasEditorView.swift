@@ -30,6 +30,9 @@ struct CanvasEditorView: View {
     @State private var customTemplate: UIImage?
     // Auto-straighten hand-drawn shapes (draw & hold). Persists across notes.
     @AppStorage("shapeDetectionEnabled") private var shapeDetection = true
+    // Developer mode (DEBUG builds): draw with a finger/mouse so the ink and
+    // shape-snap pipeline can be tested on the Simulator, which has no Pencil.
+    @AppStorage("devFingerDrawing") private var devFingerDrawing = false
 
     private var proxy: CanvasProxy { externalProxy ?? ownProxy }
 
@@ -43,6 +46,7 @@ struct CanvasEditorView: View {
                 config: config,
                 showsToolPicker: true,
                 shapeDetection: shapeDetection,
+                devFingerDrawing: devFingerDrawing,
                 customTemplateImage: customTemplate,
                 proxy: proxy,
                 onChange: { drawing, elements in
@@ -193,6 +197,23 @@ struct CanvasEditorView: View {
                     )
             }
             .help("Automatyczne prostowanie kształtów (narysuj i przytrzymaj)")
+
+            #if DEBUG
+            // Developer: finger/mouse drawing for Simulator testing.
+            Button {
+                devFingerDrawing.toggle()
+            } label: {
+                Image(systemName: "hand.draw")
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(devFingerDrawing ? Theme.pink : Theme.navySoft)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(devFingerDrawing ? Theme.pinkSoft : .clear)
+                    )
+            }
+            .help("Tryb deweloperski: rysowanie palcem/myszą (test w symulatorze)")
+            #endif
 
             imageMenu
 

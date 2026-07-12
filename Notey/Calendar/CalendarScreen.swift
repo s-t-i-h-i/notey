@@ -24,8 +24,9 @@ struct CalendarScreen: View {
     @State private var mode: CalendarMode = .month
     @State private var date: Date = .now
     @State private var expandedDay: DayKey?
-    // Bumped when the enlarged day editor closes, so the live month/week
-    // tiles reload the freshly saved ink (they capture the drawing once).
+    // Bumped when the enlarged day editor closes, so the live month tiles
+    // reload the freshly saved ink (they capture the drawing once). Only the
+    // tiles remount — the surrounding grid keeps its zoom and scroll.
     @State private var tileRefresh = 0
     // Shared ink config for month/week tiles. Only the Pencil writes; fingers
     // scroll the big grid, so it stays navigable.
@@ -54,12 +55,12 @@ struct CalendarScreen: View {
                 MonthGridView(
                     date: date,
                     notesByKey: notesByKey,
-                    config: $inkConfig
+                    config: $inkConfig,
+                    refresh: tileRefresh
                 ) { key in
                     NoteStore.calendarNote(for: key, in: context)
                     expandedDay = DayKey(key: key)
                 }
-                .id(tileRefresh)
             case .day:
                 DayView(dateKey: DateUtils.dateKey(date))
             case .year:
@@ -197,6 +198,8 @@ private struct CalendarDayCanvas: View {
     let dateKey: String
     let note: Note?
     var config: CanvasToolConfig
+    // Bumped externally to remount just this canvas (reload saved ink).
+    var refresh: Int = 0
 
     @Environment(\.modelContext) private var context
     @StateObject private var proxy = CanvasProxy()
@@ -213,8 +216,11 @@ private struct CalendarDayCanvas: View {
                 saveTask?.cancel()
                 let drawingData = drawing.dataRepresentation()
                 let elementsData = (try? JSONEncoder().encode(elements)) ?? Data()
+                // Short debounce: the enlarged day editor reads this note on
+                // open, so a tile stroke must land before the user can tap
+                // expand — 0.7s left a window where that ink got clobbered.
                 saveTask = Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    try? await Task.sleep(nanoseconds: 250_000_000)
                     guard !Task.isCancelled else { return }
                     let target = note ?? NoteStore.calendarNote(for: dateKey, in: context)
                     target.drawingData = drawingData
@@ -225,7 +231,7 @@ private struct CalendarDayCanvas: View {
             },
             onSelection: { _ in }
         )
-        .id(dateKey)
+        .id("\(dateKey)#\(refresh)")
     }
 }
 
@@ -235,22 +241,16 @@ private struct MonthGridView: View {
     let date: Date
     let notesByKey: [String: Note]
     @Binding var config: CanvasToolConfig
+    let refresh: Int
     let onExpand: (String) -> Void
-    
-    @State private var zoomScale: CGFloat = 1.0
-    @State private var activeMagnification: CGFloat = 1.0
+
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         GeometryReader { geo in
-            let days = DateUtils.monthGrid(for: date)
-            // Generous tiles: at least 230pt wide; the grid scrolls/zooms freely
-            // in both directions when it outgrows the window.
-            let tileWidth = max(230, (geo.size.width - 24 - 6 * 8) / 7) * zoomScale
-            let gridWidth = tileWidth * 7 + 6 * 8
-            // The day preview keeps the exact landscape page proportions, so the
-            // tile matches the note 1:1 (CanvasPage: 1400×1000 → 1.4 aspect).
-            let canvasHeight = tileWidth * CanvasPage.size.width / CanvasPage.size.height
-            let columns = Array(repeating: GridItem(.fixed(tileWidth), spacing: 8), count: 7)
+            // Generous tiles: at least 230pt wide; the grid itself is zoomed
+            // and panned as one surface by ZoomableGridView (canvas-like).
+            let tileWidth = max(230, (geo.size.width - 24 - 6 * 8) / 7)
 
             VStack(spacing: 0) {
                 CalendarToolRow(config: $config)
@@ -258,48 +258,48 @@ private struct MonthGridView: View {
                     .padding(.top, 10)
                     .padding(.bottom, 8)
 
-                ScrollView([.horizontal, .vertical]) {
-                    VStack(spacing: 8) {
-                        HStack(spacing: 8) {
-                            ForEach(DateUtils.weekdays, id: \.self) { w in
-                                Text(w.uppercased())
-                                    .font(.system(size: max(10, 10 * zoomScale), weight: .bold))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .frame(width: tileWidth)
-                            }
-                        }
-                        LazyVGrid(columns: columns, spacing: 8) {
-                            ForEach(days, id: \.self) { day in
-                                MonthDayTile(
-                                    day: day,
-                                    inMonth: DateUtils.month(day) == DateUtils.month(date),
-                                    note: notesByKey[DateUtils.dateKey(day)],
-                                    config: config,
-                                    canvasHeight: canvasHeight,
-                                    scale: zoomScale,
-                                    onExpand: { onExpand(DateUtils.dateKey(day)) }
-                                )
-                            }
-                        }
-                    }
-                    .frame(width: gridWidth)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 16)
-                    .scaleEffect(activeMagnification)
+                ZoomableGridView {
+                    monthGrid(tileWidth: tileWidth)
+                        // UIHostingController does not inherit the SwiftUI
+                        // environment — the tiles need the SwiftData context
+                        // to lazily create day notes.
+                        .environment(\.modelContext, context)
                 }
-                .gesture(
-                    MagnificationGesture()
-                        .onChanged { value in
-                            activeMagnification = value
-                        }
-                        .onEnded { value in
-                            // Wide range: zoom far out for the whole month, in to write.
-                            zoomScale = max(0.2, min(zoomScale * value, 4.0))
-                            activeMagnification = 1.0
-                        }
-                )
             }
         }
+    }
+
+    private func monthGrid(tileWidth: CGFloat) -> some View {
+        let days = DateUtils.monthGrid(for: date)
+        // The day preview keeps the exact landscape page proportions, so the
+        // tile matches the note 1:1 (CanvasPage: 1400×1000 → 1.4 aspect).
+        let canvasHeight = tileWidth * CanvasPage.size.width / CanvasPage.size.height
+        let columns = Array(repeating: GridItem(.fixed(tileWidth), spacing: 8), count: 7)
+
+        return VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                ForEach(DateUtils.weekdays, id: \.self) { w in
+                    Text(w.uppercased())
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: tileWidth)
+                }
+            }
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(days, id: \.self) { day in
+                    MonthDayTile(
+                        day: day,
+                        inMonth: DateUtils.month(day) == DateUtils.month(date),
+                        note: notesByKey[DateUtils.dateKey(day)],
+                        config: config,
+                        canvasHeight: canvasHeight,
+                        refresh: refresh,
+                        onExpand: { onExpand(DateUtils.dateKey(day)) }
+                    )
+                }
+            }
+        }
+        .padding(12)
     }
 }
 
@@ -309,7 +309,7 @@ private struct MonthDayTile: View {
     let note: Note?
     let config: CanvasToolConfig
     let canvasHeight: CGFloat
-    var scale: CGFloat = 1.0
+    var refresh: Int = 0
     let onExpand: () -> Void
 
     var body: some View {
@@ -317,13 +317,13 @@ private struct MonthDayTile: View {
             Button(action: onExpand) {
                 HStack {
                     Text("\(DateUtils.day(day))")
-                        .font(.system(size: max(12, 12 * scale), weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(
                             DateUtils.isToday(day)
                                 ? Theme.card
                                 : (inMonth ? Theme.navy : Theme.textSecondary.opacity(0.5))
                         )
-                        .frame(minWidth: max(22, 22 * scale), minHeight: max(22, 22 * scale))
+                        .frame(minWidth: 22, minHeight: 22)
                         .background(
                             // The delicate pink accent: today only.
                             Circle().fill(DateUtils.isToday(day) ? Theme.pink : .clear)
@@ -344,7 +344,8 @@ private struct MonthDayTile: View {
             CalendarDayCanvas(
                 dateKey: DateUtils.dateKey(day),
                 note: note,
-                config: config
+                config: config,
+                refresh: refresh
             )
             .frame(height: canvasHeight)
             .opacity(inMonth ? 1 : 0.55)
@@ -424,6 +425,96 @@ private struct DayEditorModal: View {
         }
         .background(Theme.bg)
         .onAppear { note = NoteStore.calendarNote(for: dateKey, in: context) }
+    }
+}
+
+// MARK: - Native zoomable grid host (month view)
+//
+// SwiftUI's ScrollView + MagnificationGesture cannot give the month grid a
+// canvas-like pinch: the scroll view steals two-finger gestures, the gesture
+// has no anchor, and SwiftUI offers no scroll-offset control. This wraps a
+// real UIScrollView, the same machinery the note canvas uses: one or two
+// fingers pan, pinch zooms with correct anchoring, momentum and bounce — pure
+// transform zoom, no re-layout, so it never hitches. The Pencil is excluded
+// (allowedTouchTypes) and keeps writing on the live tiles underneath. When
+// zoomed out smaller than the viewport the grid centers, like a canvas page.
+private struct ZoomableGridView<Content: View>: UIViewRepresentable {
+    @ViewBuilder let content: () -> Content
+
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        scrollView.delegate = context.coordinator
+        scrollView.backgroundColor = .clear
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.minimumZoomScale = 0.35
+        scrollView.maximumZoomScale = 2.5
+        scrollView.bouncesZoom = true
+        scrollView.alwaysBounceVertical = true
+        scrollView.alwaysBounceHorizontal = true
+
+        let host = UIHostingController(rootView: AnyView(content()))
+        host.view.backgroundColor = .clear
+        host.safeAreaRegions = []
+        scrollView.addSubview(host.view)
+
+        context.coordinator.host = host
+        restrictGesturesToFingers(scrollView)
+        context.coordinator.layoutContent(scrollView)
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        context.coordinator.host?.rootView = AnyView(content())
+        // The pinch recognizer is created lazily — re-assert its touch types.
+        restrictGesturesToFingers(scrollView)
+        guard !scrollView.isZooming else { return }
+        context.coordinator.layoutContent(scrollView)
+    }
+
+    private func restrictGesturesToFingers(_ scrollView: UIScrollView) {
+        scrollView.panGestureRecognizer.allowedTouchTypes = CanvasContainer.fingerAndPointerTouchTypes
+        scrollView.panGestureRecognizer.allowedScrollTypesMask = .all
+        scrollView.pinchGestureRecognizer?.allowedTouchTypes = CanvasContainer.fingerAndPointerTouchTypes
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIScrollViewDelegate {
+        var host: UIHostingController<AnyView>?
+        private var contentSize: CGSize = .zero
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? { host?.view }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            centerContent(scrollView)
+        }
+
+        /// Size the hosted grid once (its ideal size only changes on rotation
+        /// or split-view resize); the user's zoom level is preserved.
+        func layoutContent(_ scrollView: UIScrollView) {
+            guard let host else { return }
+            let ideal = host.sizeThatFits(
+                in: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            )
+            defer { centerContent(scrollView) }
+            guard ideal.width > 0, ideal != contentSize else { return }
+            contentSize = ideal
+            // Frames are only valid at transform identity — re-apply the zoom
+            // afterwards (UIScrollView clamps and scales contentSize itself).
+            let zoom = scrollView.zoomScale
+            scrollView.zoomScale = 1
+            host.view.frame = CGRect(origin: .zero, size: ideal)
+            scrollView.contentSize = ideal
+            scrollView.zoomScale = zoom
+        }
+
+        /// Canvas-page feel: content centers whenever it is smaller than the
+        /// viewport (zoomed far out) instead of hugging the top-left corner.
+        private func centerContent(_ scrollView: UIScrollView) {
+            let dx = max(0, (scrollView.bounds.width - scrollView.contentSize.width) / 2)
+            let dy = max(0, (scrollView.bounds.height - scrollView.contentSize.height) / 2)
+            scrollView.contentInset = UIEdgeInsets(top: dy, left: dx, bottom: dy, right: dx)
+        }
     }
 }
 
