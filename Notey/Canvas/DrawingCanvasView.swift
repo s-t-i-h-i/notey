@@ -80,6 +80,7 @@ struct DrawingCanvas: UIViewRepresentable {
     // Decoded custom template image (kept out of `config` so its bytes don't
     // enter the per-update Equatable check — change is tracked via config.customTemplateKey).
     var customTemplateImage: UIImage? = nil
+    var toolbarSettings = ToolbarSettings()
     let proxy: CanvasProxy
     let onChange: (PKDrawing, CanvasElements) -> Void
     let onSelection: (SelectedElement?) -> Void
@@ -95,6 +96,7 @@ struct DrawingCanvas: UIViewRepresentable {
         container.customTemplateImage = customTemplateImage
         container.shapeDetectionEnabled = shapeDetection
         container.devFingerDrawing = devFingerDrawing
+        container.toolbarSettings = toolbarSettings
         container.apply(config: config)
         container.setToolPickerVisible(showsToolPicker)
         proxy.container = container
@@ -107,6 +109,7 @@ struct DrawingCanvas: UIViewRepresentable {
         container.customTemplateImage = customTemplateImage
         container.shapeDetectionEnabled = shapeDetection
         container.devFingerDrawing = devFingerDrawing
+        container.toolbarSettings = toolbarSettings
         container.apply(config: config)
         container.setToolPickerVisible(showsToolPicker)
         proxy.container = container
@@ -309,8 +312,15 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     // Native floating toolbar (Apple Notes-style). Created lazily; shown only
     // for the full editor and the day editor — never the compact tiles.
-    private lazy var toolPicker = PKToolPicker()
+    private var toolPicker: PKToolPicker? = nil
     private var toolPickerVisible = false
+
+    var toolbarSettings = ToolbarSettings() {
+        didSet {
+            guard toolbarSettings != oldValue else { return }
+            rebuildToolPickerIfNeeded()
+        }
+    }
 
     // Shape straightening ("draw and hold" → ideal shape); full editor only.
     private var shapeSnapper: ShapeSnapper?
@@ -449,20 +459,54 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     func setToolPickerVisible(_ visible: Bool) {
         guard visible != toolPickerVisible else { return }
         toolPickerVisible = visible
-        applyToolPickerVisibility()
+        if toolPickerVisible && toolPicker == nil {
+            rebuildToolPickerIfNeeded()
+        } else {
+            applyToolPickerVisibility()
+        }
+    }
+
+    private func rebuildToolPickerIfNeeded() {
+        guard !compact, window != nil else { return }
+        let isVisible = toolPickerVisible
+        if let oldPicker = toolPicker {
+            oldPicker.setVisible(false, forFirstResponder: canvasView)
+            oldPicker.removeObserver(canvasView)
+        }
+        
+        let newPicker: PKToolPicker
+        if #available(iOS 18.0, *) {
+            var items: [PKToolPickerItem] = []
+            if toolbarSettings.showPen { items.append(PKToolPickerInkingItem(type: .pen)) }
+            if toolbarSettings.showPencil { items.append(PKToolPickerInkingItem(type: .pencil)) }
+            if toolbarSettings.showHighlighter { items.append(PKToolPickerInkingItem(type: .marker)) }
+            if toolbarSettings.showEraser { items.append(PKToolPickerEraserItem(type: .bitmap)) }
+            if toolbarSettings.showLasso { items.append(PKToolPickerLassoItem()) }
+            if toolbarSettings.showRuler { items.append(PKToolPickerRulerItem()) }
+            // If empty, supply a default so it doesn't crash or look totally broken
+            if items.isEmpty { items.append(PKToolPickerInkingItem(type: .pen)) }
+            newPicker = PKToolPicker(toolItems: items)
+        } else {
+            newPicker = PKToolPicker()
+        }
+        
+        toolPicker = newPicker
+        if isVisible {
+            applyToolPickerVisibility()
+        }
     }
 
     private func applyToolPickerVisibility() {
-        guard !compact, window != nil else { return }
+        guard !compact, window != nil, let picker = toolPicker else { return }
         if toolPickerVisible {
             // Adding the canvas as an observer wires its active `tool` to the
             // picker's selection automatically (native behavior).
-            toolPicker.addObserver(canvasView)
-            toolPicker.setVisible(true, forFirstResponder: canvasView)
+            picker.addObserver(canvasView)
+            picker.setVisible(true, forFirstResponder: canvasView)
             canvasView.becomeFirstResponder()
         } else {
-            toolPicker.setVisible(false, forFirstResponder: canvasView)
-            toolPicker.removeObserver(canvasView)
+            picker.setVisible(false, forFirstResponder: canvasView)
+            picker.removeObserver(canvasView)
             canvasView.resignFirstResponder()
         }
     }

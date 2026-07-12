@@ -22,6 +22,7 @@ struct CanvasEditorView: View {
     @State private var showPhotoPicker = false
     @State private var showCamera = false
     @State private var showSettings = false
+    @State private var showToolbarSettings = false
     @State private var isNewNote = false
     @State private var pdfURL: URL?
     @State private var saveTask: Task<Void, Never>?
@@ -33,6 +34,13 @@ struct CanvasEditorView: View {
     // Developer mode (DEBUG builds): draw with a finger/mouse so the ink and
     // shape-snap pipeline can be tested on the Simulator, which has no Pencil.
     @AppStorage("devFingerDrawing") private var devFingerDrawing = false
+
+    @AppStorage("toolbar_pen") private var showPen = true
+    @AppStorage("toolbar_pencil") private var showPencil = true
+    @AppStorage("toolbar_highlighter") private var showHighlighter = true
+    @AppStorage("toolbar_eraser") private var showEraser = true
+    @AppStorage("toolbar_lasso") private var showLasso = true
+    @AppStorage("toolbar_ruler") private var showRuler = true
 
     private var proxy: CanvasProxy { externalProxy ?? ownProxy }
 
@@ -48,6 +56,14 @@ struct CanvasEditorView: View {
                 shapeDetection: shapeDetection,
                 devFingerDrawing: devFingerDrawing,
                 customTemplateImage: customTemplate,
+                toolbarSettings: ToolbarSettings(
+                    showPen: showPen,
+                    showPencil: showPencil,
+                    showHighlighter: showHighlighter,
+                    showEraser: showEraser,
+                    showLasso: showLasso,
+                    showRuler: showRuler
+                ),
                 proxy: proxy,
                 onChange: { drawing, elements in
                     scheduleSave(drawing: drawing, elements: elements)
@@ -110,6 +126,9 @@ struct CanvasEditorView: View {
         }
         .sheet(isPresented: $showSettings) {
             NoteSettingsView(note: note, config: $config, isNewNote: isNewNote)
+        }
+        .sheet(isPresented: $showToolbarSettings) {
+            ToolbarSettingsView()
         }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { image in
@@ -175,6 +194,18 @@ struct CanvasEditorView: View {
                     .foregroundStyle(Theme.navySoft)
             }
             .help("Nazwa, układ, tło i kolor kartki")
+
+            Divider().frame(height: 20)
+
+            Button {
+                showToolbarSettings = true
+            } label: {
+                Image(systemName: "pencil.and.outline")
+                    .font(.system(size: 14, weight: .medium))
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(Theme.navySoft)
+            }
+            .help("Ustawienia paska narzędzi (wybór długopisów)")
 
             if config.layout == .pages {
                 Divider().frame(height: 20)
