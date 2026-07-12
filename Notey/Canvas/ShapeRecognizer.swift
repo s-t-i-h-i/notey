@@ -16,10 +16,10 @@ import PencilKit
 // forcing `state = .ended` is silently ignored) and swaps in ideal strokes
 // built from that trace. The cancel DISCARDS the wet stroke, so there is no
 // committed ink to copy params from — styling from the tool's nominal width
-// renders far too thick. Instead, every committed ink stroke refreshes a
-// per-ink-type CALIBRATION of its real, pressure-derived point sizes (tagged
-// with the tool width that produced them), and live-snapped shapes are
-// styled from that, scaled to the current tool width. Until the first stroke
+// renders far too thick. Instead, committed ink strokes build a per-ink-type
+// CALIBRATION of pressure versus real rendered point size, and the wet touch
+// trace supplies the current stroke's force and Pencil angle point by point.
+// The result is then scaled to the current tool width. Until the first stroke
 // of an ink type commits (fresh note, fresh tool), the hold arms the on-lift
 // snap instead — same result, styled from the committed stroke itself, just
 // one pen-lift later. The on-lift path also covers traces that are not
@@ -39,6 +39,16 @@ import PencilKit
 
 // MARK: Hold-still recognizer
 
+/// Ink information PencilKit does not expose for a wet stroke. Locations are
+/// recorded in canvas-view coordinates; pressure is normalized to the same
+/// 0...1 range used by `PKStrokePoint.force`.
+fileprivate struct LiveInkSample {
+    let location: CGPoint
+    let normalizedForce: CGFloat?
+    let azimuth: CGFloat?
+    let altitude: CGFloat?
+}
+
 /// Passive observer that calls `onHold` when the Pencil has stayed within
 /// `moveTolerance` of a spot for `stillDuration`. It never leaves `.possible`,
 /// so it cannot interfere with PencilKit's own drawing/scroll gestures; it is
@@ -57,9 +67,10 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
     /// Return true to CONSUME the touch — the live snap replaced the stroke,
     /// so tracking (and any re-arming) stops until the next touch begins.
     var onHold: ((CGPoint) -> Bool)?
-    /// Full path of the observed touch in view coordinates (coalesced
-    /// samples) — the wet stroke PencilKit won't share, recorded first-hand.
-    private(set) var trace: [CGPoint] = []
+    /// Full path and pressure of the observed touch in view coordinates
+    /// (coalesced samples) — the wet stroke PencilKit won't share, recorded
+    /// first-hand.
+    fileprivate private(set) var trace: [LiveInkSample] = []
 
     private weak var pencilTouch: UITouch?
     private var anchor: CGPoint = .zero
@@ -70,6 +81,24 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
     private func isObservable(_ touch: UITouch) -> Bool {
         touch.type == .pencil
             || (acceptsFingerTouches && (touch.type == .direct || touch.type == .indirectPointer))
+    }
+
+    private func sample(_ touch: UITouch) -> LiveInkSample {
+        let pressure: CGFloat?
+        if touch.type == .pencil, touch.maximumPossibleForce > 0 {
+            pressure = min(1, max(0, touch.force / touch.maximumPossibleForce))
+        } else {
+            // Synthesized Simulator touches do not model Apple Pencil
+            // pressure. Keeping this nil makes the renderer use its stable
+            // calibrated fallback instead of interpreting 0 as invisible ink.
+            pressure = nil
+        }
+        return LiveInkSample(
+            location: touch.location(in: view),
+            normalizedForce: pressure,
+            azimuth: touch.type == .pencil ? touch.azimuthAngle(in: view) : nil,
+            altitude: touch.type == .pencil ? touch.altitudeAngle : nil
+        )
     }
 
     // Belt and braces on top of the simultaneous-recognition delegate: this
@@ -89,7 +118,7 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
         lastLocation = anchor
         traveled = 0
         trace.removeAll(keepingCapacity: true)
-        trace.append(anchor)
+        trace.append(sample(touch))
         arm()
     }
 
@@ -98,7 +127,7 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
         guard let touch = pencilTouch, touches.contains(touch) else { return }
         // Coalesced samples keep the trace faithful at Pencil rates (240 Hz).
         for sample in event.coalescedTouches(for: touch) ?? [touch] {
-            trace.append(sample.location(in: view))
+            trace.append(self.sample(sample))
         }
         let p = touch.location(in: view)
         traveled += hypot(p.x - lastLocation.x, p.y - lastLocation.y)
@@ -129,7 +158,10 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
     private func arm() {
         timer?.invalidate()
         let t = Timer(timeInterval: stillDuration, repeats: false) { [weak self] _ in
-            guard let self, self.pencilTouch != nil, self.traveled >= self.minTravel else { return }
+            guard let self, let touch = self.pencilTouch, self.traveled >= self.minTravel else { return }
+            // Capture pressure at the actual hold instant as well. Pencil
+            // pressure can change while the location remains stationary.
+            self.trace.append(self.sample(touch))
             if self.onHold?(self.anchor) == true {
                 // Consumed by a live snap: stop observing this touch — its
                 // remaining movement belongs to a stroke that no longer exists.
@@ -262,7 +294,15 @@ final class ShapeSnapper: NSObject, UIGestureRecognizerDelegate {
         }
 
         let zoom = max(0.01, canvasView.zoomScale)
-        let pagePoints = hold.trace.map { CGPoint(x: $0.x / zoom, y: $0.y / zoom) }
+        let liveSamples = hold.trace.map {
+            LiveInkSample(
+                location: CGPoint(x: $0.location.x / zoom, y: $0.location.y / zoom),
+                normalizedForce: $0.normalizedForce,
+                azimuth: $0.azimuth,
+                altitude: $0.altitude
+            )
+        }
+        let pagePoints = liveSamples.map(\.location)
         let minDiag = max(7, 22 / max(1, zoom))
         guard let outlines = ShapeRecognizer.idealOutlines(for: pagePoints, minDiag: minDiag),
               !outlines.isEmpty
@@ -280,7 +320,6 @@ final class ShapeSnapper: NSObject, UIGestureRecognizerDelegate {
         pendingSnap = false
         let strokesBeforeCancel = canvasView.drawing.strokes.count
         canvasView.drawingGestureRecognizer.isEnabled = false
-        canvasView.drawingGestureRecognizer.isEnabled = true
 
         var strokes = canvasView.drawing.strokes
         let ideal: [PKStroke]
@@ -296,19 +335,38 @@ final class ShapeSnapper: NSObject, UIGestureRecognizerDelegate {
             // The cancel DISCARDED the wet stroke (the usual case): style
             // from the calibration, and rebuild the freehand from the trace
             // purely as the undo target.
-            ideal = ShapeRecognizer.strokes(along: outlines, calibration: calibration, tool: tool)
+            ideal = ShapeRecognizer.strokes(
+                along: outlines,
+                calibration: calibration,
+                tool: tool,
+                liveSamples: liveSamples
+            )
             let freehand = ShapeRecognizer.strokes(
                 along: [ShapeRecognizer.resampled(pagePoints)],
                 calibration: calibration,
-                tool: tool
+                tool: tool,
+                liveSamples: liveSamples
             )
             undoBase = PKDrawing(strokes: strokes + freehand)
         }
         strokes.append(contentsOf: ideal)
-        canvasView.drawing = PKDrawing(strokes: strokes)
-        snapLog("live-snapped mid-touch (calibrated ink) -> %d outline(s)", outlines.count)
-        UISelectionFeedbackGenerator().selectionChanged()
-        onSnap?(undoBase)
+        let snapped = PKDrawing(strokes: strokes)
+
+        // PencilKit finishes cancelling its wet stroke asynchronously. If the
+        // replacement is assigned in this same call stack, a late internal
+        // drawing update can overwrite it — most noticeable with very light
+        // strokes, which then appear to vanish. Keep the drawing recognizer
+        // disabled through the cancellation turn and publish the snap on the
+        // next main-loop pass. This is still a live snap (one frame later),
+        // but no stale PencilKit transaction can erase it.
+        DispatchQueue.main.async { [weak self, weak canvasView] in
+            guard let self, let canvasView else { return }
+            canvasView.drawingGestureRecognizer.isEnabled = true
+            canvasView.drawing = snapped
+            snapLog("live-snapped mid-touch (pressure profile) -> %d outline(s)", outlines.count)
+            UISelectionFeedbackGenerator().selectionChanged()
+            self.onSnap?(undoBase)
+        }
         return true
     }
 
@@ -321,10 +379,11 @@ final class ShapeSnapper: NSObject, UIGestureRecognizerDelegate {
         // any gate (and before a lift-snap swaps the stroke away).
         if let canvasView, let tool = canvasView.tool as? PKInkingTool,
            let last = canvasView.drawing.strokes.last {
-            let calibration = ShapeRecognizer.calibration(from: last, toolWidth: tool.width)
+            let fresh = ShapeRecognizer.calibration(from: last, toolWidth: tool.width)
+            let calibration = inkCalibrations[tool.inkType]?.merging(fresh) ?? fresh
             inkCalibrations[tool.inkType] = calibration
-            snapLog("ink calibration %@: size=%.2f (tool width %.2f)",
-                    tool.inkType.rawValue, Double(calibration.style.size.width), Double(tool.width))
+            snapLog("ink calibration %@: %d pressure samples (tool width %.2f)",
+                    tool.inkType.rawValue, calibration.samples.count, Double(tool.width))
         }
         defer { pendingSnap = false }
         guard isEnabled else { return }
@@ -1313,7 +1372,7 @@ extension ShapeRecognizer {
 
     /// Returns the idealized stroke(s) for `stroke`, or nil when nothing
     /// should change. Geometry comes from `idealOutlines`; the original ink
-    /// character (tool, color, width) is preserved via `InkStyle`.
+    /// character (tool, color, pressure profile) is preserved point by point.
     static func idealize(_ stroke: PKStroke, minDiag: CGFloat = Tune.minDiag) -> [PKStroke]? {
         let raw = stroke.path.interpolatedPoints(by: .distance(3))
             .map { $0.location.applying(stroke.transform) }
@@ -1321,103 +1380,323 @@ extension ShapeRecognizer {
         return strokes(along: outlines, matching: stroke)
     }
 
-    /// Strokes along `outlines` styled like an existing stroke (median ink
-    /// params — pressure spikes don't skew the rebuilt width).
+    /// Strokes along `outlines` styled like an existing stroke. Every point's
+    /// pressure-derived size, opacity, force and Pencil angle are transferred
+    /// by arc-length progress, so straightening does not flatten the stroke's
+    /// natural thick/thin character.
     static func strokes(along outlines: [[CGPoint]], matching stroke: PKStroke) -> [PKStroke] {
-        let ink = InkStyle(stroke: stroke)
-        return outlines.map { ink.stroke(along: $0) }
+        let profile = InkProfile(stroke: stroke)
+        return makeStrokes(
+            along: outlines,
+            ink: stroke.ink,
+            creationDate: stroke.path.creationDate,
+            profile: profile
+        )
     }
 
-    /// Measured ink params of a real committed stroke, tagged with the tool
-    /// width that produced them. The live snap styles its ideal shapes from
-    /// these (scaled to the current tool width) — its own wet stroke never
-    /// commits, and the tool's NOMINAL width bears no relation to the point
-    /// sizes PencilKit derives from pressure (it renders far too thick).
+    /// Pressure-to-rendering samples learned from committed strokes. Sizes are
+    /// normalized by the tool width, which lets one calibration remain valid
+    /// when the user changes only the width slider. Several strokes are merged
+    /// so light and heavy pressure remain represented instead of allowing the
+    /// last stroke to redefine all future live snaps.
     fileprivate struct InkCalibration {
-        let style: InkStyle
-        let toolWidth: CGFloat
+        fileprivate let samples: [InkPointStyle]
+        fileprivate let fallback: InkPointStyle
+
+        fileprivate init(stroke: PKStroke, toolWidth: CGFloat) {
+            let width = max(0.01, toolWidth)
+            let count = stroke.path.count
+            let step = max(1, count / 96)
+            var measured: [InkPointStyle] = []
+            var index = 0
+            while index < count {
+                var style = InkPointStyle(stroke.path[index])
+                style.size.width /= width
+                style.size.height /= width
+                measured.append(style)
+                index += step
+            }
+            if let last = stroke.path.last, (count - 1) % step != 0 {
+                var style = InkPointStyle(last)
+                style.size.width /= width
+                style.size.height /= width
+                measured.append(style)
+            }
+            self.init(samples: measured)
+        }
+
+        private init(samples raw: [InkPointStyle]) {
+            let usable = raw.filter {
+                $0.force.isFinite && $0.size.width.isFinite && $0.size.height.isFinite
+            }
+            let values = usable.isEmpty ? [InkPointStyle.safeDefault] : usable
+            samples = values.sorted { $0.force < $1.force }
+            fallback = InkPointStyle.median(of: values)
+        }
+
+        fileprivate func merging(_ other: InkCalibration) -> InkCalibration {
+            let combined = (samples + other.samples).sorted { $0.force < $1.force }
+            let limit = 192
+            guard combined.count > limit else { return InkCalibration(samples: combined) }
+            // Uniformly retain the whole pressure range, including both
+            // extremes, rather than dropping light-pressure samples first.
+            let reduced = (0..<limit).map { i in
+                combined[Int((Double(i) / Double(limit - 1) * Double(combined.count - 1)).rounded())]
+            }
+            return InkCalibration(samples: reduced)
+        }
+
+        fileprivate func style(for live: LiveInkSample, toolWidth: CGFloat) -> InkPointStyle {
+            var result: InkPointStyle
+            if let force = live.normalizedForce, samples.count > 1 {
+                result = interpolatedStyle(atForce: force)
+                result.force = force
+            } else {
+                result = fallback
+            }
+            result.size.width *= toolWidth
+            result.size.height *= toolWidth
+            if let azimuth = live.azimuth { result.azimuth = azimuth }
+            if let altitude = live.altitude { result.altitude = altitude }
+            return result.renderable()
+        }
+
+        private func interpolatedStyle(atForce force: CGFloat) -> InkPointStyle {
+            guard let first = samples.first, let last = samples.last else { return fallback }
+            if force <= first.force { return first }
+            if force >= last.force { return last }
+            var low = 0
+            var high = samples.count - 1
+            while high - low > 1 {
+                let mid = (low + high) / 2
+                if samples[mid].force < force { low = mid } else { high = mid }
+            }
+            let a = samples[low]
+            let b = samples[high]
+            let span = max(0.0001, b.force - a.force)
+            return InkPointStyle.interpolate(a, b, t: (force - a.force) / span)
+        }
     }
 
     fileprivate static func calibration(from stroke: PKStroke, toolWidth: CGFloat) -> InkCalibration {
-        InkCalibration(style: InkStyle(stroke: stroke), toolWidth: max(0.01, toolWidth))
+        InkCalibration(stroke: stroke, toolWidth: toolWidth)
     }
 
-    /// Strokes along `outlines` styled from a calibration, re-colored and
-    /// width-scaled to the CURRENT tool.
+    /// Strokes along `outlines` styled from a calibration and the CURRENT wet
+    /// touch trace. The trace supplies per-point pressure and Pencil angle;
+    /// calibration converts those values into PencilKit's actual rendered
+    /// point sizes for the selected ink.
     fileprivate static func strokes(
         along outlines: [[CGPoint]],
         calibration: InkCalibration,
-        tool: PKInkingTool
+        tool: PKInkingTool,
+        liveSamples: [LiveInkSample]
     ) -> [PKStroke] {
-        let ink = InkStyle(calibration: calibration, tool: tool)
-        return outlines.map { ink.stroke(along: $0) }
+        let profile = InkProfile(
+            liveSamples: liveSamples,
+            calibration: calibration,
+            toolWidth: max(0.01, tool.width)
+        )
+        return makeStrokes(
+            along: outlines,
+            ink: tool.ink,
+            creationDate: Date(),
+            profile: profile
+        )
     }
 
-    /// Uniform ink parameters sampled from the original stroke (medians, so a
-    /// single pressure spike doesn't skew the rebuilt width), applied along
-    /// the idealized outline.
-    fileprivate struct InkStyle {
-        let ink: PKInk
-        let size: CGSize
-        let opacity: CGFloat
-        let force: CGFloat
-        let azimuth: CGFloat
-        let altitude: CGFloat
-        let created: Date
+    /// Rendering attributes for one PencilKit control point.
+    fileprivate struct InkPointStyle {
+        var size: CGSize
+        var opacity: CGFloat
+        var force: CGFloat
+        var azimuth: CGFloat
+        var altitude: CGFloat
+
+        static let safeDefault = InkPointStyle(
+            size: CGSize(width: 1, height: 1),
+            opacity: 1,
+            force: 0.5,
+            azimuth: 0,
+            altitude: .pi / 2
+        )
+
+        init(_ point: PKStrokePoint) {
+            size = point.size
+            opacity = point.opacity
+            force = point.force
+            azimuth = point.azimuth
+            altitude = point.altitude
+        }
+
+        init(size: CGSize, opacity: CGFloat, force: CGFloat, azimuth: CGFloat, altitude: CGFloat) {
+            self.size = size
+            self.opacity = opacity
+            self.force = force
+            self.azimuth = azimuth
+            self.altitude = altitude
+        }
+
+        /// PencilKit may emit zero-sized taper points at the ends of a real
+        /// stroke. Reusing one as a uniform/generated control point can make a
+        /// whole snapped thin line disappear, so generated points get a tiny
+        /// half-point floor while retaining all visible pressure variation.
+        func renderable() -> InkPointStyle {
+            var copy = self
+            copy.size.width = max(0.5, copy.size.width.isFinite ? copy.size.width : 0.5)
+            copy.size.height = max(0.5, copy.size.height.isFinite ? copy.size.height : 0.5)
+            copy.opacity = min(1, max(0.01, copy.opacity.isFinite ? copy.opacity : 1))
+            copy.force = min(1, max(0, copy.force.isFinite ? copy.force : 0.5))
+            return copy
+        }
+
+        static func interpolate(_ a: InkPointStyle, _ b: InkPointStyle, t rawT: CGFloat) -> InkPointStyle {
+            let t = min(1, max(0, rawT))
+            func lerp(_ x: CGFloat, _ y: CGFloat) -> CGFloat { x + (y - x) * t }
+            func angle(_ x: CGFloat, _ y: CGFloat) -> CGFloat {
+                var delta = (y - x).truncatingRemainder(dividingBy: 2 * .pi)
+                if delta > .pi { delta -= 2 * .pi }
+                if delta < -.pi { delta += 2 * .pi }
+                return x + delta * t
+            }
+            return InkPointStyle(
+                size: CGSize(width: lerp(a.size.width, b.size.width), height: lerp(a.size.height, b.size.height)),
+                opacity: lerp(a.opacity, b.opacity),
+                force: lerp(a.force, b.force),
+                azimuth: angle(a.azimuth, b.azimuth),
+                altitude: lerp(a.altitude, b.altitude)
+            )
+        }
+
+        static func median(of styles: [InkPointStyle]) -> InkPointStyle {
+            guard !styles.isEmpty else { return safeDefault }
+            func median(_ values: [CGFloat]) -> CGFloat {
+                let sorted = values.sorted()
+                return sorted[sorted.count / 2]
+            }
+            return InkPointStyle(
+                size: CGSize(
+                    width: median(styles.map { $0.size.width }),
+                    height: median(styles.map { $0.size.height })
+                ),
+                opacity: median(styles.map(\.opacity)),
+                force: median(styles.map(\.force)),
+                azimuth: median(styles.map(\.azimuth)),
+                altitude: median(styles.map(\.altitude))
+            )
+        }
+    }
+
+    /// A pressure/angle profile indexed by normalized arc-length progress.
+    private struct InkProfile {
+        private struct Keyframe {
+            let progress: CGFloat
+            let style: InkPointStyle
+        }
+
+        private let keyframes: [Keyframe]
 
         init(stroke: PKStroke) {
-            ink = stroke.ink
-            created = stroke.path.creationDate
-            let n = stroke.path.count
-            var widths: [CGFloat] = []
-            var heights: [CGFloat] = []
-            let step = max(1, n / 24)
-            var i = 0
-            while i < n {
-                let p = stroke.path[i]
-                widths.append(p.size.width)
-                heights.append(p.size.height)
-                i += step
+            var locations: [CGPoint] = []
+            var styles: [InkPointStyle] = []
+            locations.reserveCapacity(stroke.path.count)
+            styles.reserveCapacity(stroke.path.count)
+            for point in stroke.path {
+                locations.append(point.location.applying(stroke.transform))
+                styles.append(InkPointStyle(point).renderable())
             }
-            widths.sort(); heights.sort()
-            size = CGSize(width: widths[widths.count / 2], height: heights[heights.count / 2])
-            let mid = stroke.path[n / 2]
-            opacity = mid.opacity
-            force = mid.force
-            azimuth = mid.azimuth
-            altitude = mid.altitude
+            keyframes = Self.makeKeyframes(locations: locations, styles: styles)
         }
 
-        /// Calibrated params re-targeted at the current tool: measured sizes
-        /// scaled by the width ratio, ink (and thus color) from the tool.
-        init(calibration: InkCalibration, tool: PKInkingTool) {
-            let scale = tool.width / calibration.toolWidth
-            let base = calibration.style
-            ink = tool.ink
-            created = Date()
-            size = CGSize(width: base.size.width * scale, height: base.size.height * scale)
-            opacity = base.opacity
-            force = base.force
-            azimuth = base.azimuth
-            altitude = base.altitude
+        init(liveSamples: [LiveInkSample], calibration: InkCalibration, toolWidth: CGFloat) {
+            let locations = liveSamples.map(\.location)
+            let styles = liveSamples.map { calibration.style(for: $0, toolWidth: toolWidth) }
+            keyframes = Self.makeKeyframes(locations: locations, styles: styles)
         }
 
-        func stroke(along points: [CGPoint]) -> PKStroke {
+        private static func makeKeyframes(locations: [CGPoint], styles: [InkPointStyle]) -> [Keyframe] {
+            guard !locations.isEmpty, locations.count == styles.count else {
+                return [Keyframe(progress: 0, style: .safeDefault.renderable())]
+            }
+            var distances = Array(repeating: CGFloat.zero, count: locations.count)
+            for i in 1..<locations.count {
+                distances[i] = distances[i - 1] + hypot(
+                    locations[i].x - locations[i - 1].x,
+                    locations[i].y - locations[i - 1].y
+                )
+            }
+            let total = max(0.0001, distances.last ?? 0)
+            var result: [Keyframe] = []
+            for i in locations.indices {
+                let frame = Keyframe(progress: distances[i] / total, style: styles[i].renderable())
+                if let last = result.last, abs(last.progress - frame.progress) < 0.00001 {
+                    // A stationary hold can still change pressure; the latest
+                    // sample is the correct style for that location.
+                    result[result.count - 1] = frame
+                } else {
+                    result.append(frame)
+                }
+            }
+            return result
+        }
+
+        func style(at progress: CGFloat) -> InkPointStyle {
+            guard let first = keyframes.first, let last = keyframes.last else {
+                return .safeDefault.renderable()
+            }
+            if progress <= first.progress { return first.style }
+            if progress >= last.progress { return last.style }
+            var low = 0
+            var high = keyframes.count - 1
+            while high - low > 1 {
+                let mid = (low + high) / 2
+                if keyframes[mid].progress < progress { low = mid } else { high = mid }
+            }
+            let a = keyframes[low]
+            let b = keyframes[high]
+            let span = max(0.0001, b.progress - a.progress)
+            return InkPointStyle.interpolate(a.style, b.style, t: (progress - a.progress) / span).renderable()
+        }
+    }
+
+    /// Build all output strokes against one global profile. A multi-stroke
+    /// result such as an arrow therefore keeps pressure in the same order as
+    /// the original single gesture.
+    private static func makeStrokes(
+        along outlines: [[CGPoint]],
+        ink: PKInk,
+        creationDate: Date,
+        profile: InkProfile
+    ) -> [PKStroke] {
+        let lengths = outlines.map(pathLength)
+        let totalLength = max(0.0001, lengths.reduce(0, +))
+        var consumed: CGFloat = 0
+        var result: [PKStroke] = []
+        result.reserveCapacity(outlines.count)
+
+        for (outlineIndex, points) in outlines.enumerated() where points.count >= 2 {
             var sp: [PKStrokePoint] = []
             sp.reserveCapacity(points.count)
+            var localLength: CGFloat = 0
             for (i, p) in points.enumerated() {
+                if i > 0 {
+                    localLength += hypot(p.x - points[i - 1].x, p.y - points[i - 1].y)
+                }
+                let style = profile.style(at: (consumed + localLength) / totalLength)
                 sp.append(PKStrokePoint(
                     location: p,
                     timeOffset: TimeInterval(i) * 0.008,
-                    size: size,
-                    opacity: opacity,
-                    force: force,
-                    azimuth: azimuth,
-                    altitude: altitude
+                    size: style.size,
+                    opacity: style.opacity,
+                    force: style.force,
+                    azimuth: style.azimuth,
+                    altitude: style.altitude
                 ))
             }
-            let path = PKStrokePath(controlPoints: sp, creationDate: created)
-            return PKStroke(ink: ink, path: path, transform: .identity, mask: nil)
+            let path = PKStrokePath(controlPoints: sp, creationDate: creationDate)
+            result.append(PKStroke(ink: ink, path: path, transform: .identity, mask: nil))
+            consumed += lengths[outlineIndex]
         }
+        return result
     }
 }

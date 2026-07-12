@@ -15,6 +15,12 @@ final class ShapeSnapUITests: XCTestCase {
     @MainActor
     func testDrawAndHoldSnapsLine() throws {
         let app = XCUIApplication()
+        // Command-line defaults are scoped to this launch and reliably enable
+        // direct-touch drawing even on a freshly installed Simulator app.
+        app.launchArguments += [
+            "-devFingerDrawing", "YES",
+            "-shapeDetectionEnabled", "YES"
+        ]
         app.launch()
 
         // Fresh browser (runner clears notey.openTabs): create a note.
@@ -34,8 +40,10 @@ final class ShapeSnapUITests: XCTestCase {
 
         // Stroke 0 (warm-up, below the thumbnail crop): a plain committed
         // stroke records the ink calibration the live snap styles from.
-        let w1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.68))
-        let w2 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.60, dy: 0.70))
+        // The editor uses a persistent split-view sidebar; keep every gesture
+        // fully inside the page area on the trailing side of the window.
+        let w1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: 0.68))
+        let w2 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.76, dy: 0.70))
         w1.press(forDuration: 0.10, thenDragTo: w2, withVelocity: XCUIGestureVelocity(rawValue: 350), thenHoldForDuration: 0.05)
 
         sleep(1)
@@ -43,18 +51,23 @@ final class ShapeSnapUITests: XCTestCase {
         // Stroke 1: ~4.5 deg tilted line, HELD still at the end. Expected:
         // the hold fires after ~0.42s and the ink morphs mid-touch into a
         // perfectly horizontal ideal line, styled from the calibration.
-        let start1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.33, dy: 0.40))
-        let end1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.67, dy: 0.42))
+        let start1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.40))
+        let end1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.80, dy: 0.42))
         start1.press(forDuration: 0.10, thenDragTo: end1, withVelocity: XCUIGestureVelocity(rawValue: 350), thenHoldForDuration: 1.2)
 
         sleep(1)
 
         // Stroke 2 (control): same tilt, NO hold. Must stay freehand/tilted.
-        let start2 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.33, dy: 0.55))
-        let end2 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.67, dy: 0.57))
+        let start2 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.55))
+        let end2 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.80, dy: 0.57))
         start2.press(forDuration: 0.10, thenDragTo: end2, withVelocity: XCUIGestureVelocity(rawValue: 350), thenHoldForDuration: 0.05)
 
         // Autosave debounce is 0.7s — give persistence time before teardown.
         sleep(3)
+
+        let result = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        result.name = "shape-snap-live-result"
+        result.lifetime = .keepAlways
+        add(result)
     }
 }
