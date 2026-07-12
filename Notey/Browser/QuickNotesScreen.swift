@@ -87,7 +87,7 @@ struct QuickNotesScreen: View {
                 .font(.system(size: 13, weight: .medium))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(Theme.textSecondary)
-                .padding(.bottom, 44)
+                .padding(.vertical, 44)
                 .padding(.horizontal, 24)
         }
         .frame(maxWidth: .infinity)

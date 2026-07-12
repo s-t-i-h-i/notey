@@ -187,7 +187,7 @@ struct ContentView: View {
         return QuickNoteCard(
             note: note,
             isPinned: slot.pinned,
-            onTogglePin: { togglePin(slot.id) },
+            onTogglePin: { togglePin(slot.id, currentCenter: base, in: size) },
             onClose: { closeQuickSlot(slot.id) },
             onDragChanged: {
                 quickDrags[slot.id] = $0
@@ -196,8 +196,41 @@ struct ContentView: View {
             onDragEnded: { translation in
                 draggingQuickID = nil
                 let center = CGPoint(x: base.x + translation.width, y: base.y + translation.height)
-                settleCard(slot.id, at: center, in: size)
-                quickDrags[slot.id] = .zero
+                
+                if let index = quickSlots.firstIndex(where: { $0.id == slot.id }) {
+                    let isPinned = quickSlots[index].pinned
+                    let edgeThreshold: CGFloat = 80
+                    
+                    if !isPinned {
+                        if center.x > size.width - edgeThreshold {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                quickSlots[index].docked = true
+                                quickSlots[index].dockTrailing = true
+                                quickSlots[index].dockFraction = Double(center.y / max(1, size.height))
+                                quickDrags[slot.id] = .zero
+                            }
+                        } else if center.x < edgeThreshold {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                quickSlots[index].docked = true
+                                quickSlots[index].dockTrailing = false
+                                quickSlots[index].dockFraction = Double(center.y / max(1, size.height))
+                                quickDrags[slot.id] = .zero
+                            }
+                        } else {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                                settleCard(slot.id, at: center, in: size)
+                                quickDrags[slot.id] = .zero
+                            }
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                            settleCard(slot.id, at: center, in: size)
+                            quickDrags[slot.id] = .zero
+                        }
+                    }
+                } else {
+                    quickDrags[slot.id] = .zero
+                }
             }
         )
         // Pinned cards shrink around their own center, staying in place.
@@ -221,10 +254,11 @@ struct ContentView: View {
 
     // Pushpin tapped: shrink & pin in place, or restore. Persists via the
     // quickSlots → AppStorage onChange, so it survives app restarts.
-    private func togglePin(_ id: UUID) {
+    private func togglePin(_ id: UUID, currentCenter: CGPoint, in size: CGSize) {
         guard let index = quickSlots.firstIndex(where: { $0.id == id }) else { return }
         withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
             quickSlots[index].pinned.toggle()
+            settleCard(id, at: currentCenter, in: size)
         }
     }
 
