@@ -260,12 +260,16 @@ struct SidebarView: View {
                 Label("Dodaj podfolder", systemImage: "folder.badge.plus")
             }
             Menu {
-                ForEach(Theme.folderColors, id: \.self) { hex in
+                ForEach(Theme.folderColorsNamed, id: \.hex) { item in
                     Button {
-                        folder.colorHex = hex
+                        folder.colorHex = item.hex
                         try? context.save()
                     } label: {
-                        Label(hex == folder.colorHex ? "Wybrany" : "Kolor", systemImage: "circle.fill")
+                        Label {
+                            Text(item.name)
+                        } icon: {
+                            Image(uiImage: UIColor.circle(color: UIColor(hexString: item.hex), selected: item.hex == folder.colorHex))
+                        }
                     }
                 }
             } label: {

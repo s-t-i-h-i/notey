@@ -110,7 +110,7 @@ struct QuickNotesScreen: View {
                             .foregroundStyle(Theme.border)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        NoteThumbnailView(note: note, fit: .content)
+                        NoteThumbnailView(note: note, fit: note.layout == .infinite ? .content : .topThird)
                     }
                 }
                 .frame(height: 130)

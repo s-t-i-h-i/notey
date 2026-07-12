@@ -10,6 +10,7 @@ enum NoteThumbnail {
         case page     // scale the whole logical page into the target
         case width    // fill the tile width, top-aligned crop (calendar tiles)
         case content  // zoom to whatever was drawn
+        case topThird // top 1/3 of the page
     }
 
     private static func fitTag(_ fit: Fit) -> String {
@@ -17,6 +18,7 @@ enum NoteThumbnail {
         case .page: return "p"
         case .width: return "w"
         case .content: return "c"
+        case .topThird: return "t"
         }
     }
 
@@ -47,6 +49,8 @@ enum NoteThumbnail {
             // readable in small month/week tiles instead of letterboxing.
             let sliceHeight = min(page.height, page.width * size.height / max(1, size.width))
             region = CGRect(x: 0, y: 0, width: page.width, height: sliceHeight)
+        case .topThird:
+            region = CGRect(x: 0, y: 0, width: page.width, height: page.height / 3.0)
         case .content:
             var union: CGRect = .null
             if !drawing.strokes.isEmpty { union = union.union(drawing.bounds) }
@@ -56,17 +60,22 @@ enum NoteThumbnail {
             }
         }
 
-        let scale = min(size.width / region.width, size.height / region.height, 1.2)
+        let scale: CGFloat
+        if fit == .topThird {
+            scale = max(size.width / region.width, size.height / region.height)
+        } else {
+            scale = min(size.width / region.width, size.height / region.height, 1.2)
+        }
+        
         let renderer = UIGraphicsImageRenderer(size: size)
         let img = renderer.image { ctx in
             let c = ctx.cgContext
             paper.setFill()
             c.fill(CGRect(origin: .zero, size: size))
 
-            c.translateBy(
-                x: (size.width - region.width * scale) / 2 - region.minX * scale,
-                y: (size.height - region.height * scale) / 2 - region.minY * scale
-            )
+            let tx = (size.width - region.width * scale) / 2 - region.minX * scale
+            let ty = fit == .topThird ? -region.minY * scale : (size.height - region.height * scale) / 2 - region.minY * scale
+            c.translateBy(x: tx, y: ty)
             c.scaleBy(x: scale, y: scale)
 
             // Decorative template first (page coords), under everything else.

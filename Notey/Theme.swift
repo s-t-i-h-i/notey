@@ -43,16 +43,23 @@ enum Theme {
         "#F0EEE9", // stone
     ]
 
-    static let folderColors: [String] = [
-        "#2E3D5C", // navy
-        "#C9B98F", // sand
-        "#7C8DAA", // steel blue
-        "#8FA98F", // sage
-        "#B98F9C", // dusty rose
-        "#A08F6E", // olive
-        "#6E7FA0", // slate
-        "#C4A5AE", // pink-beige
+    struct NamedColor {
+        let hex: String
+        let name: String
+    }
+
+    static let folderColorsNamed: [NamedColor] = [
+        NamedColor(hex: "#2E3D5C", name: "Granatowy"),
+        NamedColor(hex: "#C9B98F", name: "Piaskowy"),
+        NamedColor(hex: "#7C8DAA", name: "Stalowy"),
+        NamedColor(hex: "#8FA98F", name: "Szałwiowy"),
+        NamedColor(hex: "#B98F9C", name: "Brudny róż"),
+        NamedColor(hex: "#A08F6E", name: "Oliwkowy"),
+        NamedColor(hex: "#6E7FA0", name: "Łupkowy"),
+        NamedColor(hex: "#C4A5AE", name: "Pudrowy")
     ]
+
+    static let folderColors: [String] = folderColorsNamed.map { $0.hex }
 }
 
 extension Color {
@@ -91,5 +98,27 @@ extension UIColor {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         getRed(&r, green: &g, blue: &b, alpha: &a)
         return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+    }
+
+    static func circle(color: UIColor, selected: Bool = false, size: CGSize = CGSize(width: 24, height: 24)) -> UIImage {
+        let rect = CGRect(origin: .zero, size: size)
+        UIGraphicsBeginImageContextWithOptions(size, false, 0)
+        color.setFill()
+        UIBezierPath(ovalIn: rect).fill()
+        
+        if selected, let check = UIImage(systemName: "checkmark")?.withTintColor(.white, renderingMode: .alwaysOriginal) {
+            let checkSize = CGSize(width: size.width * 0.6, height: size.height * 0.6)
+            let checkRect = CGRect(
+                x: (size.width - checkSize.width) / 2,
+                y: (size.height - checkSize.height) / 2,
+                width: checkSize.width,
+                height: checkSize.height
+            )
+            check.draw(in: checkRect)
+        }
+        
+        let image = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return image?.withRenderingMode(.alwaysOriginal) ?? UIImage()
     }
 }

@@ -288,10 +288,16 @@ struct FolderGridView: View {
                 Label("Zmień nazwę", systemImage: "pencil")
             }
             Menu {
-                ForEach(Theme.folderColors, id: \.self) { hex in
-                    Button(hex == folder.colorHex ? "● Wybrany" : "Kolor \(hex)") {
-                        folder.colorHex = hex
+                ForEach(Theme.folderColorsNamed, id: \.hex) { item in
+                    Button {
+                        folder.colorHex = item.hex
                         try? context.save()
+                    } label: {
+                        Label {
+                            Text(item.name)
+                        } icon: {
+                            Image(uiImage: UIColor.circle(color: UIColor(hexString: item.hex), selected: item.hex == folder.colorHex))
+                        }
                     }
                 }
             } label: {
@@ -321,7 +327,7 @@ struct FolderGridView: View {
                     if note.isEmpty {
                         Color.clear
                     } else {
-                        NoteThumbnailView(note: note, fit: .content)
+                        NoteThumbnailView(note: note, fit: note.layout == .infinite ? .content : .topThird)
                     }
                 }
                 .frame(height: 130)
