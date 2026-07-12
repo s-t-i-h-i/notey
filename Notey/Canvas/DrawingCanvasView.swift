@@ -1019,11 +1019,16 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = false
-        // Straighten the just-finished stroke if the Pencil was held still at
-        // its end and exactly one ink stroke was added (not an erase/lasso).
-        // PencilKit often commits the stroke AFTER this callback — when the
-        // count hasn't ticked up yet, defer the check to drawingDidChange.
-        if canvasView.tool is PKInkingTool {
+        // The live snap replaces the ink mid-touch by cancelling the drawing
+        // gesture — the tool end that cancellation produces is bookkeeping,
+        // not a stroke end, and must not arm the on-lift snap.
+        let liveSnapped = shapeSnapper?.toolInteractionDidEnd() ?? false
+        // Fallback: straighten the just-finished stroke if the Pencil was
+        // held still at its end and exactly one ink stroke was added (not an
+        // erase/lasso). PencilKit often commits the stroke AFTER this
+        // callback — when the count hasn't ticked up yet, defer the check to
+        // drawingDidChange.
+        if !liveSnapped, canvasView.tool is PKInkingTool {
             if canvasView.drawing.strokes.count == strokeCountAtToolBegin + 1 {
                 shapeSnapper?.inkStrokeDidEnd()
             } else {

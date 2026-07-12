@@ -5,20 +5,37 @@ import PencilKit
 //
 // PencilKit ships the same inking engine as Apple Notes, but NOT its private
 // shape recognition ("Smart Shapes"). This module reproduces that interaction
-// on top of PencilKit: hold the Pencil still for a moment at the end of a
-// stroke and, on lift, the freehand stroke is replaced by an idealized shape.
+// on top of PencilKit: hold the Pencil still for a moment while finishing a
+// stroke and the freehand ink morphs into an idealized shape THE MOMENT the
+// hold fires — the pen never has to lift (Apple Notes behavior).
 //
-// Recognized forms (pure geometry over the last PKStroke — no private API):
+// PencilKit has no API to read or replace a wet (in-flight) stroke, so the
+// live snap works around it: the hold recognizer records the touch trace
+// itself, and on hold the snapper cancels PencilKit's drawing gesture (an
+// `isEnabled` toggle — the only WORKING way to end a wet stroke early;
+// forcing `state = .ended` is silently ignored) and swaps in ideal strokes
+// built from that trace. The cancel DISCARDS the wet stroke, so there is no
+// committed ink to copy params from — styling from the tool's nominal width
+// renders far too thick. Instead, every committed ink stroke refreshes a
+// per-ink-type CALIBRATION of its real, pressure-derived point sizes (tagged
+// with the tool width that produced them), and live-snapped shapes are
+// styled from that, scaled to the current tool width. Until the first stroke
+// of an ink type commits (fresh note, fresh tool), the hold arms the on-lift
+// snap instead — same result, styled from the committed stroke itself, just
+// one pen-lift later. The on-lift path also covers traces that are not
+// idealizable at hold time.
+//
+// Recognized forms (pure geometry over the traced points — no private API):
 //   open:   straight line (snapped to the 45° grid), polyline (L/V/zigzag),
 //           arrow (straight OR curved shaft, hook or V head), circular arc,
 //           smooth Bézier curve (least-squares piecewise cubic fit)
 //   closed: circle, ellipse (any tilt), triangle, rectangle (any rotation),
 //           quadrilateral, polygon (5–8 corners), cleaned smooth loop
 //
-// The interaction is guarded twice: the hold must happen at the END of the
-// stroke (a pause mid-stroke followed by more drawing does not snap), and a
-// new tool interaction clears any stale hold (so holding the eraser never
-// straightens the next pen stroke).
+// Guards: the live snap only runs while an INKING tool interaction is active
+// (holding the eraser or lasso still does nothing), a new tool interaction
+// clears any stale hold, and the on-lift fallback additionally requires the
+// hold to have happened at the stroke's end.
 
 // MARK: Hold-still recognizer
 
@@ -36,9 +53,13 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
     /// Developer/simulator mode: also observe finger and pointer touches (the
     /// Simulator has no Pencil; the canvas draws with .anyInput there).
     var acceptsFingerTouches = false
-    /// Location is in the view's coordinate space (scroll-content coordinates
-    /// for a canvas).
-    var onHold: ((CGPoint) -> Void)?
+    /// Called on stillness with the hold location (view/content coordinates).
+    /// Return true to CONSUME the touch — the live snap replaced the stroke,
+    /// so tracking (and any re-arming) stops until the next touch begins.
+    var onHold: ((CGPoint) -> Bool)?
+    /// Full path of the observed touch in view coordinates (coalesced
+    /// samples) — the wet stroke PencilKit won't share, recorded first-hand.
+    private(set) var trace: [CGPoint] = []
 
     private weak var pencilTouch: UITouch?
     private var anchor: CGPoint = .zero
@@ -67,12 +88,18 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
         anchor = touch.location(in: view)
         lastLocation = anchor
         traveled = 0
+        trace.removeAll(keepingCapacity: true)
+        trace.append(anchor)
         arm()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
         super.touchesMoved(touches, with: event)
         guard let touch = pencilTouch, touches.contains(touch) else { return }
+        // Coalesced samples keep the trace faithful at Pencil rates (240 Hz).
+        for sample in event.coalescedTouches(for: touch) ?? [touch] {
+            trace.append(sample.location(in: view))
+        }
         let p = touch.location(in: view)
         traveled += hypot(p.x - lastLocation.x, p.y - lastLocation.y)
         lastLocation = p
@@ -103,7 +130,14 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
         timer?.invalidate()
         let t = Timer(timeInterval: stillDuration, repeats: false) { [weak self] _ in
             guard let self, self.pencilTouch != nil, self.traveled >= self.minTravel else { return }
-            self.onHold?(self.anchor)
+            if self.onHold?(self.anchor) == true {
+                // Consumed by a live snap: stop observing this touch — its
+                // remaining movement belongs to a stroke that no longer exists.
+                self.pencilTouch = nil
+                self.timer?.invalidate()
+                self.timer = nil
+                self.trace.removeAll()
+            }
         }
         // .common keeps the timer firing even while UIKit is in tracking mode
         // (e.g. a simultaneous two-finger scroll).
@@ -116,6 +150,7 @@ final class HoldStillGestureRecognizer: UIGestureRecognizer {
         pencilTouch = nil
         timer?.invalidate()
         timer = nil
+        trace.removeAll()
     }
 }
 
@@ -135,22 +170,41 @@ final class ShapeSnapper: NSObject, UIGestureRecognizerDelegate {
 
     private weak var canvasView: PKCanvasView?
     private let hold = HoldStillGestureRecognizer()
-    // Set while the Pencil is held still; the actual snap happens on lift,
-    // once PencilKit has committed the stroke.
+    // Fallback path only: set when a hold fired but the trace was not
+    // idealizable mid-touch; the snap then retries on lift, once PencilKit
+    // has committed the stroke.
     private var pendingSnap = false
-    // Where the hold fired, in canvas content coordinates — the snap only
-    // happens when the stroke also ENDS there.
+    // Where the fallback hold fired, in canvas content coordinates — the
+    // on-lift snap only happens when the stroke also ENDS there.
     private var holdLocation: CGPoint = .zero
+    // True while an inking/erasing tool interaction is in flight (mirrors the
+    // container's canvasViewDidBegin/EndUsingTool) — the live snap must never
+    // fire from a bare hold with no stroke under it.
+    private var toolStrokeActive = false
+    // Set when the live snap cancels PencilKit's drawing gesture: the
+    // resulting canvasViewDidEndUsingTool is bookkeeping, not a stroke end,
+    // and the container must skip its on-lift snap check.
+    private var suppressToolEnd = false
+    // Measured ink params of the most recent committed stroke, per ink type.
+    // The live snap's own wet stroke never commits (the cancel discards it),
+    // so ideal shapes are styled from these instead of the tool's nominal
+    // width, which renders far too thick.
+    private var inkCalibrations: [PKInkingTool.InkType: ShapeRecognizer.InkCalibration] = [:]
 
     init(canvasView: PKCanvasView) {
         self.canvasView = canvasView
         super.init()
         hold.onHold = { [weak self] location in
-            guard let self, self.isEnabled else { return }
+            guard let self, self.isEnabled else { return false }
+            snapLog("hold fired at (%.0f, %.0f)", location.x, location.y)
+            // Preferred: replace the ink RIGHT NOW, pen still down.
+            if self.performLiveSnap() { return true }
+            // Fallback: arm the on-lift snap (PencilKit's committed stroke
+            // may still be idealizable even when the raw trace wasn't).
             self.pendingSnap = true
             self.holdLocation = location
-            snapLog("hold fired at (%.0f, %.0f)", location.x, location.y)
             UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            return false
         }
         // Purely passive: never withhold or cancel touch delivery — PencilKit
         // must see the pencil lift the instant it happens.
@@ -175,11 +229,103 @@ final class ShapeSnapper: NSObject, UIGestureRecognizerDelegate {
     /// stroke (or from an erase / lasso pass) must not leak into this one.
     func strokeDidBegin() {
         pendingSnap = false
+        toolStrokeActive = true
+        suppressToolEnd = false
+    }
+
+    /// Called from `canvasViewDidEndUsingTool` — ALWAYS, before any snap
+    /// bookkeeping. Returns true when this tool end is just the tail of a
+    /// live snap's gesture cancellation (skip the on-lift snap check).
+    func toolInteractionDidEnd() -> Bool {
+        toolStrokeActive = false
+        let suppressed = suppressToolEnd
+        suppressToolEnd = false
+        if suppressed { snapLog("tool end suppressed (live snap already replaced the stroke)") }
+        return suppressed
+    }
+
+    /// Replace the WET stroke with its ideal shape while the pen is still
+    /// down. PencilKit won't hand over an in-flight stroke, so this cancels
+    /// the drawing gesture (the only public way to end a wet stroke) and
+    /// rebuilds the ink from the hold recognizer's own trace.
+    private func performLiveSnap() -> Bool {
+        guard toolStrokeActive,
+              let canvasView,
+              let tool = canvasView.tool as? PKInkingTool
+        else { return false }
+        // Live styling needs ink params measured from a real committed
+        // stroke of this ink type — until one lands (fresh note, fresh
+        // tool), snap on lift instead: same result, one pen-lift later.
+        guard let calibration = inkCalibrations[tool.inkType] else {
+            snapLog("live: no ink calibration for %@ yet — arming on-lift fallback", tool.inkType.rawValue)
+            return false
+        }
+
+        let zoom = max(0.01, canvasView.zoomScale)
+        let pagePoints = hold.trace.map { CGPoint(x: $0.x / zoom, y: $0.y / zoom) }
+        let minDiag = max(7, 22 / max(1, zoom))
+        guard let outlines = ShapeRecognizer.idealOutlines(for: pagePoints, minDiag: minDiag),
+              !outlines.isEmpty
+        else {
+            snapLog("live: trace not idealizable — arming on-lift fallback")
+            return false
+        }
+
+        // Cancel the in-flight drawing (`isEnabled` toggle — the only
+        // WORKING way to end a wet stroke early; `state = .ended` is
+        // silently ignored by PencilKit's recognizer). The resulting
+        // DidEndUsingTool must not run the on-lift snap logic — flag it
+        // BEFORE toggling, the callback can fire synchronously.
+        suppressToolEnd = true
+        pendingSnap = false
+        let strokesBeforeCancel = canvasView.drawing.strokes.count
+        canvasView.drawingGestureRecognizer.isEnabled = false
+        canvasView.drawingGestureRecognizer.isEnabled = true
+
+        var strokes = canvasView.drawing.strokes
+        let ideal: [PKStroke]
+        let undoBase: PKDrawing
+        if strokes.count > strokesBeforeCancel, let wet = strokes.last {
+            // The cancel COMMITTED the wet stroke: best case — style from
+            // its real ink params, replace it, undo restores it as drawn.
+            ideal = ShapeRecognizer.strokes(along: outlines, matching: wet)
+            undoBase = canvasView.drawing
+            strokes.removeLast()
+            snapLog("live: wet stroke committed on cancel — styling from it")
+        } else {
+            // The cancel DISCARDED the wet stroke (the usual case): style
+            // from the calibration, and rebuild the freehand from the trace
+            // purely as the undo target.
+            ideal = ShapeRecognizer.strokes(along: outlines, calibration: calibration, tool: tool)
+            let freehand = ShapeRecognizer.strokes(
+                along: [ShapeRecognizer.resampled(pagePoints)],
+                calibration: calibration,
+                tool: tool
+            )
+            undoBase = PKDrawing(strokes: strokes + freehand)
+        }
+        strokes.append(contentsOf: ideal)
+        canvasView.drawing = PKDrawing(strokes: strokes)
+        snapLog("live-snapped mid-touch (calibrated ink) -> %d outline(s)", outlines.count)
+        UISelectionFeedbackGenerator().selectionChanged()
+        onSnap?(undoBase)
+        return true
     }
 
     /// Called by the container from `canvasViewDidEndUsingTool` once a fresh
     /// ink stroke has landed. Snaps it if the Pencil was held at its end.
     func inkStrokeDidEnd() {
+        // Every committed ink stroke refreshes the calibration for its ink
+        // type — the live snap styles ideal shapes from these measured
+        // params, because its own wet stroke never commits. Recorded before
+        // any gate (and before a lift-snap swaps the stroke away).
+        if let canvasView, let tool = canvasView.tool as? PKInkingTool,
+           let last = canvasView.drawing.strokes.last {
+            let calibration = ShapeRecognizer.calibration(from: last, toolWidth: tool.width)
+            inkCalibrations[tool.inkType] = calibration
+            snapLog("ink calibration %@: size=%.2f (tool width %.2f)",
+                    tool.inkType.rawValue, Double(calibration.style.size.width), Double(tool.width))
+        }
         defer { pendingSnap = false }
         guard isEnabled else { return }
         guard pendingSnap else {
@@ -256,10 +402,12 @@ enum ShapeRecognizer {
     /// SOMETHING for a deliberate hold: an exact primitive when one fits,
     /// otherwise a cleaned-up curve.
     static func idealOutlines(for raw: [CGPoint], minDiag: CGFloat = Tune.minDiag) -> [[CGPoint]]? {
-        // Hold-to-snap strokes end (and often start) with a dwell: a cluster
-        // of near-identical points where the pencil rested. Those clusters
-        // read as phantom corners downstream — collapse them first.
-        let cleaned = collapseDwell(dedupe(raw))
+        // Normalize the input first: live touch traces are TIME-sampled, so
+        // slow passages pile points up and sample-count windows (smoothing,
+        // corner detection) stop meaning a consistent arc span — resample to
+        // uniform spacing. Then collapse the dwell knots at either end (the
+        // pencil resting during hold-to-snap) that read as phantom corners.
+        let cleaned = collapseDwell(resampled(raw))
         guard cleaned.count >= 6 else { return nil }
         let pts = smoothed(cleaned)
 
@@ -818,13 +966,29 @@ enum ShapeRecognizer {
 
     // MARK: Geometry helpers
 
-    /// Drop consecutive points that barely move (sub-sample jitter).
-    private static func dedupe(_ pts: [CGPoint]) -> [CGPoint] {
-        guard var last = pts.first else { return pts }
-        var out = [last]
-        for p in pts.dropFirst() where dist(p, last) > 0.6 {
-            out.append(p)
-            last = p
+    /// Uniform arc-length resampling (also subsumes de-duplication — points
+    /// that don't advance the path emit nothing).
+    static func resampled(_ pts: [CGPoint], step: CGFloat = Tune.resample) -> [CGPoint] {
+        guard let first = pts.first, pts.count > 1 else { return pts }
+        var out = [first]
+        var acc: CGFloat = 0
+        var prev = first
+        for p in pts.dropFirst() {
+            var from = prev
+            var remaining = dist(from, p)
+            while remaining > 0, acc + remaining >= step {
+                let t = (step - acc) / remaining
+                let next = lerp(from, p, t)
+                out.append(next)
+                remaining -= (step - acc)
+                from = next
+                acc = 0
+            }
+            acc += remaining
+            prev = p
+        }
+        if let last = pts.last, dist(out[out.count - 1], last) > 0.5 {
+            out.append(last)
         }
         return out
     }
@@ -1154,14 +1318,45 @@ extension ShapeRecognizer {
         let raw = stroke.path.interpolatedPoints(by: .distance(3))
             .map { $0.location.applying(stroke.transform) }
         guard let outlines = idealOutlines(for: raw, minDiag: minDiag), !outlines.isEmpty else { return nil }
+        return strokes(along: outlines, matching: stroke)
+    }
+
+    /// Strokes along `outlines` styled like an existing stroke (median ink
+    /// params — pressure spikes don't skew the rebuilt width).
+    static func strokes(along outlines: [[CGPoint]], matching stroke: PKStroke) -> [PKStroke] {
         let ink = InkStyle(stroke: stroke)
+        return outlines.map { ink.stroke(along: $0) }
+    }
+
+    /// Measured ink params of a real committed stroke, tagged with the tool
+    /// width that produced them. The live snap styles its ideal shapes from
+    /// these (scaled to the current tool width) — its own wet stroke never
+    /// commits, and the tool's NOMINAL width bears no relation to the point
+    /// sizes PencilKit derives from pressure (it renders far too thick).
+    fileprivate struct InkCalibration {
+        let style: InkStyle
+        let toolWidth: CGFloat
+    }
+
+    fileprivate static func calibration(from stroke: PKStroke, toolWidth: CGFloat) -> InkCalibration {
+        InkCalibration(style: InkStyle(stroke: stroke), toolWidth: max(0.01, toolWidth))
+    }
+
+    /// Strokes along `outlines` styled from a calibration, re-colored and
+    /// width-scaled to the CURRENT tool.
+    fileprivate static func strokes(
+        along outlines: [[CGPoint]],
+        calibration: InkCalibration,
+        tool: PKInkingTool
+    ) -> [PKStroke] {
+        let ink = InkStyle(calibration: calibration, tool: tool)
         return outlines.map { ink.stroke(along: $0) }
     }
 
     /// Uniform ink parameters sampled from the original stroke (medians, so a
     /// single pressure spike doesn't skew the rebuilt width), applied along
     /// the idealized outline.
-    private struct InkStyle {
+    fileprivate struct InkStyle {
         let ink: PKInk
         let size: CGSize
         let opacity: CGFloat
@@ -1191,6 +1386,20 @@ extension ShapeRecognizer {
             force = mid.force
             azimuth = mid.azimuth
             altitude = mid.altitude
+        }
+
+        /// Calibrated params re-targeted at the current tool: measured sizes
+        /// scaled by the width ratio, ink (and thus color) from the tool.
+        init(calibration: InkCalibration, tool: PKInkingTool) {
+            let scale = tool.width / calibration.toolWidth
+            let base = calibration.style
+            ink = tool.ink
+            created = Date()
+            size = CGSize(width: base.size.width * scale, height: base.size.height * scale)
+            opacity = base.opacity
+            force = base.force
+            azimuth = base.azimuth
+            altitude = base.altitude
         }
 
         func stroke(along points: [CGPoint]) -> PKStroke {

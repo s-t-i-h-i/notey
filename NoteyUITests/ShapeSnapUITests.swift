@@ -32,9 +32,17 @@ final class ShapeSnapUITests: XCTestCase {
 
         let window = app.windows.firstMatch
 
+        // Stroke 0 (warm-up, below the thumbnail crop): a plain committed
+        // stroke records the ink calibration the live snap styles from.
+        let w1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.35, dy: 0.68))
+        let w2 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.60, dy: 0.70))
+        w1.press(forDuration: 0.10, thenDragTo: w2, withVelocity: XCUIGestureVelocity(rawValue: 350), thenHoldForDuration: 0.05)
+
+        sleep(1)
+
         // Stroke 1: ~4.5 deg tilted line, HELD still at the end. Expected:
-        // hold fires after ~0.42s, lift snaps the stroke to a perfectly
-        // horizontal ideal line.
+        // the hold fires after ~0.42s and the ink morphs mid-touch into a
+        // perfectly horizontal ideal line, styled from the calibration.
         let start1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.33, dy: 0.40))
         let end1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.67, dy: 0.42))
         start1.press(forDuration: 0.10, thenDragTo: end1, withVelocity: XCUIGestureVelocity(rawValue: 350), thenHoldForDuration: 1.2)
