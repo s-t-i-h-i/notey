@@ -39,7 +39,7 @@ final class ShapeSnapUITests: XCTestCase {
         let window = app.windows.firstMatch
 
         // Stroke 0 (warm-up, below the thumbnail crop): a plain committed
-        // stroke records the ink calibration the live snap styles from.
+        // stroke, kept freehand — a control for the persisted drawing.
         // The editor uses a persistent split-view sidebar; keep every gesture
         // fully inside the page area on the trailing side of the window.
         let w1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.52, dy: 0.68))
@@ -49,11 +49,12 @@ final class ShapeSnapUITests: XCTestCase {
         sleep(1)
 
         // Stroke 1: ~4.5 deg tilted line, HELD still at the end. Expected:
-        // the hold fires after ~0.42s and the ink morphs mid-touch into a
-        // perfectly horizontal ideal line, styled from the calibration.
+        // the hold fires after ~0.65s and arms the snap; on pen-lift the ink
+        // is replaced by a perfectly horizontal ideal line exactly as thick
+        // as the stroke's own thickest point.
         let start1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.50, dy: 0.40))
         let end1 = window.coordinate(withNormalizedOffset: CGVector(dx: 0.80, dy: 0.42))
-        start1.press(forDuration: 0.10, thenDragTo: end1, withVelocity: XCUIGestureVelocity(rawValue: 350), thenHoldForDuration: 1.2)
+        start1.press(forDuration: 0.10, thenDragTo: end1, withVelocity: XCUIGestureVelocity(rawValue: 350), thenHoldForDuration: 1.6)
 
         sleep(1)
 

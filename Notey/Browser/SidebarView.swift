@@ -47,6 +47,7 @@ struct SidebarView: View {
                         + Text(".").foregroundColor(Theme.pink))
                         .font(.system(size: 22, weight: .heavy))
                         .padding(.top, 10)
+                    
                     Spacer()
                     // Stars on threads, hanging from the top edge.
                     HangingStars(strands: HangingStars.three, color: Theme.navy.opacity(0.72))
@@ -308,6 +309,15 @@ struct SidebarView: View {
         .padding(.horizontal, -6)
         .padding(.bottom, 6)
         .accessibilityLabel("Kalendarz")
+        .overlay(alignment: .topLeading) {
+            Image("snoopy")
+                .resizable()
+                .scaledToFit()
+                .frame(height: 90)
+                .scaleEffect(x: -1, y: 1)
+                .offset(x: 68, y: -30)
+                .allowsHitTesting(false)
+        }
     }
 
     private func navRow(

@@ -156,11 +156,11 @@ struct QuickNoteCard: View {
         .overlay(alignment: .top) {
             Button(action: onTogglePin) {
                 Pushpin(pressed: isPinned)
-                    .frame(width: 40, height: 46)
+                    .frame(width: 100, height: 100)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .offset(y: -18)
+            .offset(y: -40)
             .accessibilityLabel(isPinned
                 ? "Odepnij szybką notatkę"
                 : "Przypnij i zmniejsz szybką notatkę")
@@ -186,17 +186,6 @@ struct QuickNoteCard: View {
                 y += 26
             }
             ctx.stroke(lines, with: .color(Color(hex: 0xBFD0DE).opacity(0.55)), lineWidth: 1)
-            // A tiny star charm dangling from the top edge.
-            let charmX = size.width - 46
-            var thread = Path()
-            thread.move(to: CGPoint(x: charmX, y: 0))
-            thread.addLine(to: CGPoint(x: charmX, y: 13))
-            ctx.stroke(thread, with: .color(Theme.navy.opacity(0.4)), lineWidth: 1)
-            let charmRect = CGRect(x: charmX - 5.5, y: 13, width: 11, height: 11)
-            let tilt = CGAffineTransform(translationX: charmRect.midX, y: charmRect.midY)
-                .rotated(by: -10 * .pi / 180)
-                .translatedBy(x: -charmRect.midX, y: -charmRect.midY)
-            ctx.fill(StarShape().path(in: charmRect).applying(tilt), with: .color(Theme.navy.opacity(0.55)))
         }
         .allowsHitTesting(false)
     }
@@ -321,69 +310,16 @@ extension PKDrawing {
 private struct Pushpin: View {
     var pressed: Bool
 
-    private let headLight = Color(hex: 0xF29AA9)
-    private let headBase  = Color(hex: 0xD9536B)
-    private let headDark  = Color(hex: 0x9E2E45)
-
     var body: some View {
-        VStack(spacing: -3) {
-            // Domed head with a specular highlight for volume.
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [headLight, headBase, headDark],
-                            center: UnitPoint(x: 0.34, y: 0.30),
-                            startRadius: 0.5,
-                            endRadius: 16
-                        )
-                    )
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.clear, headDark.opacity(0.45)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-                Circle().stroke(headDark.opacity(0.55), lineWidth: 0.5)
-                Ellipse()
-                    .fill(.white.opacity(0.8))
-                    .frame(width: 7, height: 5)
-                    .blur(radius: 1)
-                    .offset(x: -4, y: -5)
-            }
-            .frame(width: 22, height: 22)
-
-            // Metallic needle tapering to a point.
-            NeedleShape()
-                .fill(
-                    LinearGradient(
-                        colors: [Color(hex: 0xF2F2F2), Color(hex: 0x9AA0A6), Color(hex: 0x5F646A)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: 6, height: 13)
-        }
-        .compositingGroup()
-        .shadow(color: .black.opacity(pressed ? 0.18 : 0.32),
-                radius: pressed ? 1.5 : 4,
-                x: 0, y: pressed ? 1 : 3)
-        .rotationEffect(.degrees(pressed ? 0 : -9))
-        .offset(y: pressed ? 4 : 0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pressed)
-    }
-}
-
-private struct NeedleShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        p.closeSubpath()
-        return p
+        Image("pinezka")
+            .resizable()
+            .scaledToFit()
+            .shadow(color: .black.opacity(pressed ? 0.18 : 0.32),
+                    radius: pressed ? 1.5 : 4,
+                    x: 0, y: pressed ? 1 : 3)
+            .rotationEffect(.degrees(pressed ? 0 : -9))
+            .offset(y: pressed ? 4 : 0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: pressed)
     }
 }
 

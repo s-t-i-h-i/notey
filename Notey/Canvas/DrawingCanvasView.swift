@@ -253,6 +253,7 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
     // Delivered by DrawingCanvas; used to render the .custom page template.
     var customTemplateImage: UIImage?
     private let selectionLayer = ImmediateShapeLayer()
+    private let snapPreviewLayer = ImmediateShapeLayer()
 
     private(set) var elements: CanvasElements
     private var config = CanvasToolConfig()
@@ -396,6 +397,15 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
         overlayHost.layer.addSublayer(selectionLayer)
 
+        // Hold-time hint of the shape snap: a light-gray ghost of the ideal
+        // outlines, geometry only (the real ink swap happens on pen-lift,
+        // styled from the committed stroke).
+        snapPreviewLayer.fillColor = nil
+        snapPreviewLayer.strokeColor = UIColor(white: 0.55, alpha: 0.55).cgColor
+        snapPreviewLayer.lineCap = .round
+        snapPreviewLayer.lineJoin = .round
+        overlayHost.layer.addSublayer(snapPreviewLayer)
+
         // Siblings of the canvas — paper below the (transparent) ink layer,
         // selection above it. See the z-order note at the top of the class.
         addSubview(objectsHost)
@@ -444,6 +454,9 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
                 guard let self else { return }
                 self.commitElementChange(from: self.elements, fromDrawing: before)
                 self.ensureRunwayForContent()
+            }
+            snapper.onPreview = { [weak self] outlines in
+                self?.showSnapPreview(outlines)
             }
             shapeSnapper = snapper
         }
@@ -1075,16 +1088,12 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
         toolInUse = false
-        // The live snap replaces the ink mid-touch by cancelling the drawing
-        // gesture — the tool end that cancellation produces is bookkeeping,
-        // not a stroke end, and must not arm the on-lift snap.
-        let liveSnapped = shapeSnapper?.toolInteractionDidEnd() ?? false
-        // Fallback: straighten the just-finished stroke if the Pencil was
-        // held still at its end and exactly one ink stroke was added (not an
-        // erase/lasso). PencilKit often commits the stroke AFTER this
-        // callback — when the count hasn't ticked up yet, defer the check to
-        // drawingDidChange.
-        if !liveSnapped, canvasView.tool is PKInkingTool {
+        shapeSnapper?.toolInteractionDidEnd()
+        // Straighten the just-finished stroke if the Pencil was held still at
+        // its end and exactly one ink stroke was added (not an erase/lasso).
+        // PencilKit often commits the stroke AFTER this callback — when the
+        // count hasn't ticked up yet, defer the check to drawingDidChange.
+        if canvasView.tool is PKInkingTool {
             if canvasView.drawing.strokes.count == strokeCountAtToolBegin + 1 {
                 shapeSnapper?.inkStrokeDidEnd()
             } else {
@@ -1094,6 +1103,24 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         }
         retryPendingEdgeShift()
         ensureRunwayForContent()
+    }
+
+    /// Light-gray hold-time ghost of the ideal shape (page coordinates), on
+    /// the overlay host so it rides the scroll/zoom sync like the selection
+    /// chrome. Thickness is a fixed screen-constant hairline on purpose —
+    /// the preview only promises geometry, never ink weight.
+    private func showSnapPreview(_ outlines: [[CGPoint]]?) {
+        guard let outlines, !outlines.isEmpty else {
+            snapPreviewLayer.path = nil
+            return
+        }
+        let path = UIBezierPath()
+        for points in outlines where points.count >= 2 {
+            path.move(to: points[0])
+            for p in points.dropFirst() { path.addLine(to: p) }
+        }
+        snapPreviewLayer.lineWidth = 3 / max(0.01, zoom)
+        snapPreviewLayer.path = path.cgPath
     }
 
     // MARK: Photo drag machinery
