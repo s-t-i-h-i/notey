@@ -46,7 +46,6 @@ struct QuickNotesScreen: View {
             }
             .padding(16)
         }
-        .background(LinenBackground())
         .confirmationDialog(
             "Usunąć szybką notatkę?",
             isPresented: Binding(get: { deletingNote != nil }, set: { if !$0 { deletingNote = nil } }),
@@ -93,7 +92,7 @@ struct QuickNotesScreen: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
+                .strokeBorder(Theme.navySoft.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
         )
     }
 

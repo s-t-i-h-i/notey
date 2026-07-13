@@ -70,7 +70,6 @@ struct CalendarScreen: View {
                 }
             }
         }
-        .background(LinenBackground())
         .fullScreenCover(item: $expandedDay, onDismiss: { tileRefresh += 1 }) { day in
             DayEditorModal(dateKey: day.key)
         }
@@ -120,7 +119,8 @@ struct CalendarScreen: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Theme.card)
+        // Translucent paper: the watercolor clouds glow through the header.
+        .background(Theme.card.opacity(0.72))
     }
 
     private var title: String {
@@ -375,7 +375,7 @@ private struct DayView: View {
                 CanvasEditorView(note: note)
                     .id(note.id)
             } else {
-                Theme.bg
+                Color.clear
             }
         }
         .onAppear { note = NoteStore.calendarNote(for: dateKey, in: context) }
@@ -412,7 +412,7 @@ private struct DayEditorModal: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Theme.card)
+            .background(Theme.card.opacity(0.72))
 
             GreekDivider()
 
@@ -420,10 +420,10 @@ private struct DayEditorModal: View {
                 CanvasEditorView(note: note)
                     .id(note.id)
             } else {
-                Theme.bg
+                Color.clear
             }
         }
-        .background(Theme.bg)
+        .background(WatercolorBackdrop())
         .onAppear { note = NoteStore.calendarNote(for: dateKey, in: context) }
     }
 }

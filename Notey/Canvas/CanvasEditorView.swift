@@ -46,7 +46,7 @@ struct CanvasEditorView: View {
 
     var body: some View {
         ZStack {
-            Theme.bg.ignoresSafeArea()
+            WatercolorBackdrop(veil: 0.25)
 
             DrawingCanvas(
                 initialDrawing: note.drawing,

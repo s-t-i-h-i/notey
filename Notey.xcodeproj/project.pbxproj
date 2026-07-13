@@ -25,6 +25,7 @@
 		AFE1BF8CBEB9276A7E60A914 /* NoteyApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE94D1A1E5562A808603176 /* NoteyApp.swift */; };
 		C39FF7C68E7FF407162A8FE0 /* QuickNotesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B19F2FF91070061C3AC49EB /* QuickNotesScreen.swift */; };
 		DEC3F4096CCD84527AD059F4 /* TabsBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6A8650DA2DBD94F07ED0CEC /* TabsBarView.swift */; };
+		E23244553CA4EE5E8FD3E003 /* DesignScreenshotUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68AF4CD809EEF9503F34640F /* DesignScreenshotUITests.swift */; };
 		E338844CFC483DFD624008CA /* NoteSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E00EB4EF122E6D6E0574558 /* NoteSettingsView.swift */; };
 		E963E6DB86739202D2AE18F3 /* ShapeRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBF5A36C43E92DC562C4E92 /* ShapeRecognizer.swift */; };
 		ED79DD1FE4A9029EB630E495 /* Decor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CF4AA211C25A2EB28D43CD5 /* Decor.swift */; };
@@ -48,6 +49,7 @@
 		3577B88440AC35DEA985DC16 /* NoteThumbnail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteThumbnail.swift; sourceTree = "<group>"; };
 		4C0A8204493F8081A72E9EAD /* FolderGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderGridView.swift; sourceTree = "<group>"; };
 		4FBF5A36C43E92DC562C4E92 /* ShapeRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShapeRecognizer.swift; sourceTree = "<group>"; };
+		68AF4CD809EEF9503F34640F /* DesignScreenshotUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignScreenshotUITests.swift; sourceTree = "<group>"; };
 		72E253EC8026FFD2B23DFD0E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		7CF4AA211C25A2EB28D43CD5 /* Decor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Decor.swift; sourceTree = "<group>"; };
 		8C415257E25CFD5835CC6529 /* NoteyUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = NoteyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -100,6 +102,7 @@
 		8A1C202284746374054B9C05 /* NoteyUITests */ = {
 			isa = PBXGroup;
 			children = (
+				68AF4CD809EEF9503F34640F /* DesignScreenshotUITests.swift */,
 				9808448DCA188A42D0CFC62C /* ShapeSnapUITests.swift */,
 			);
 			path = NoteyUITests;
@@ -265,6 +268,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E23244553CA4EE5E8FD3E003 /* DesignScreenshotUITests.swift in Sources */,
 				72FB87DA411E83BA92155E02 /* ShapeSnapUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -359,7 +363,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.adrian.notey;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -440,7 +444,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.2;
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.adrian.notey;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;

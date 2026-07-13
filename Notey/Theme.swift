@@ -12,6 +12,7 @@ enum Theme {
     static let border = Color(hex: 0xE4DAC6)
     static let navy = Color(hex: 0x1F2A44)      // primary: text, buttons, active ink
     static let navySoft = Color(hex: 0x54628A)
+    static let waveBlue = Color(hex: 0x3B526C)
     static let textSecondary = Color(hex: 0x8A8271)
 
     // The single accent — used sparingly (active tool, "today", save dot)

@@ -265,6 +265,76 @@ struct LinenBackground: View {
     }
 }
 
+// MARK: - Photographic backdrops (watercolor sky + misty sidebar paper)
+
+// The two photo textures are treated as *materials*, not pictures: they are
+// aspect-filled edge to edge, veiled so cards and navy text keep contrast,
+// and re-unified with the paper aesthetic by tiling the same linen weave
+// used everywhere else on top. Both are static full-bleed layers behind
+// scrolling content (content moves, the wash stays — like a painted desk).
+
+/// Watercolor-sky wash (asset `bckgrd`): white clouds fading into blue.
+/// Used behind every browsing surface — note grids, calendar, editor desk.
+struct WatercolorBackdrop: View {
+    /// Extra white veil, for surfaces that want a quieter wash.
+    var veil: Double = 0
+
+    var body: some View {
+        Color.clear
+            .overlay(
+                Image("bckgrd")
+                    .resizable()
+                    .scaledToFill()
+            )
+            .overlay(Color.white.opacity(veil))
+            .overlay(
+                Image(uiImage: DecorTexture.linenTile)
+                    .resizable(resizingMode: .tile)
+                    .opacity(0.3)
+            )
+            .clipped()
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Misty gray paper (asset `sidebar-texture`) for the sidebar: a sheet of
+/// textured paper lying over the watercolor desk. A soft shaded trailing
+/// edge makes it read as a physical layer rather than a pasted image.
+struct SidebarBackdrop: View {
+    var body: some View {
+        Color.clear
+            .overlay(
+                Image("sidebar-texture")
+                    .resizable()
+                    .scaledToFill()
+            )
+            .overlay(Color.white.opacity(0.24))
+            .overlay(
+                Image(uiImage: DecorTexture.linenTile)
+                    .resizable(resizingMode: .tile)
+                    .opacity(0.3)
+            )
+            .overlay(alignment: .trailing) {
+                // Shadowed fold where the paper meets the watercolor desk.
+                LinearGradient(
+                    colors: [.clear, Theme.navy.opacity(0.08)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+            }
+            .overlay(alignment: .trailing) {
+                Theme.navy.opacity(0.12).frame(width: 1)
+            }
+            .clipped()
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Page templates (decorative background printed on kartka pages)
 
 // Renders a PageTemplate into a full page so the live canvas, PDF export and

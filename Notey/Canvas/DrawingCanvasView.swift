@@ -353,7 +353,10 @@ final class CanvasContainer: UIView, PKCanvasViewDelegate, UIGestureRecognizerDe
         self.elements = elements
         self.compact = compact
         super.init(frame: .zero)
-        backgroundColor = compact ? Theme.cardUI : UIColor(Theme.bg)
+        // Editor canvases are transparent so the watercolor backdrop behind
+        // the SwiftUI wrapper shows around the page cards; compact calendar
+        // tiles stay opaque (they ARE the card).
+        backgroundColor = compact ? Theme.cardUI : .clear
         // The hosts extend far beyond the visible frame (they cover the whole
         // page space) — without clipping they would paint over neighbors.
         clipsToBounds = true

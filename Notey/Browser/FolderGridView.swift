@@ -73,7 +73,6 @@ struct FolderGridView: View {
             }
             .padding(16)
         }
-        .background(LinenBackground())
         .sheet(item: $exportURL) { url in
             ShareSheet(items: [url])
         }
@@ -235,7 +234,7 @@ struct FolderGridView: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
+                    .strokeBorder(Theme.navySoft.opacity(0.35), style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
             )
         }
         .buttonStyle(.plain)
@@ -348,11 +347,7 @@ struct FolderGridView: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    Image("blue_texture")
-                        .resizable()
-                        .scaledToFill()
-                )
+                .background(Theme.waveBlue)
                 .clipped()
             }
             .background(RoundedRectangle(cornerRadius: 16).fill(Theme.card))

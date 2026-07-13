@@ -105,7 +105,7 @@ struct ContentView: View {
                         }
                     }
                 }
-                .background(Theme.bg)
+                .background(WatercolorBackdrop())
                 .toolbar(.hidden, for: .navigationBar)
             }
             .navigationSplitViewStyle(.balanced)
@@ -407,6 +407,20 @@ struct ContentView: View {
         quickSlots = QuickSlot.decode(quickSlotsRaw).filter { slot in
             allNotes.contains { $0.id == slot.id }
         }
+        #if DEBUG
+        // Dev navigation for Simulator screenshots:
+        //   simctl launch <device> com.adrian.notey -noteyRoute calendar|quick|editor
+        switch UserDefaults.standard.string(forKey: "noteyRoute") {
+        case "calendar": route = .calendar
+        case "quick": route = .quickNotes
+        case "editor":
+            if let note = allNotes.filter({ $0.kind == .note && !$0.isEmpty })
+                .max(by: { $0.updatedAt < $1.updatedAt }) {
+                openNote(note)
+            }
+        default: break
+        }
+        #endif
     }
 
     private func openNote(_ note: Note) {

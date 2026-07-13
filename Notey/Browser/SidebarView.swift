@@ -41,10 +41,9 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                // The pink dot is one of the few pink accents in the app.
                 HStack(alignment: .top, spacing: 8) {
                     (Text("notey").foregroundColor(Theme.navy)
-                        + Text(".").foregroundColor(Theme.pink))
+                        + Text(".").foregroundColor(.blue))
                         .font(.system(size: 22, weight: .heavy))
                         .padding(.top, 10)
                     
@@ -147,7 +146,7 @@ struct SidebarView: View {
             .resizable()
             .scaledToFit()
         }
-        .background(LinenBackground())
+        .background(SidebarBackdrop())
         .ignoresSafeArea(edges: .bottom)
         .alert("Zmień nazwę folderu", isPresented: Binding(
             get: { renamingFolder != nil },
@@ -237,7 +236,7 @@ struct SidebarView: View {
         .padding(.trailing, 10)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(isActive ? Theme.bgDeep : .clear)
+                .fill(isActive ? Theme.navy.opacity(0.08) : .clear)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -345,7 +344,7 @@ struct SidebarView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
-            .background(RoundedRectangle(cornerRadius: 10).fill(active ? Theme.bgDeep : .clear))
+            .background(RoundedRectangle(cornerRadius: 10).fill(active ? Theme.navy.opacity(0.08) : .clear))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 4)

@@ -55,7 +55,17 @@ struct TabsBarView: View {
 
             tabsScroller
         }
-        .background(LinenBackground(base: Theme.bgDeep, intensity: 0.35))
+        // Translucent wash: the watercolor backdrop shows through, the strip
+        // only slightly recedes so the cream tabs stay readable.
+        .background(
+            Theme.navy.opacity(0.06)
+                .overlay(
+                    Image(uiImage: DecorTexture.linenTile)
+                        .resizable(resizingMode: .tile)
+                        .opacity(0.3)
+                )
+                .allowsHitTesting(false)
+        )
         // Dropping a tab on the empty bar area pulls the note out of its folder.
         .dropDestination(for: String.self) { items, _ in
             guard let id = draggedNoteID(items) else { return false }
